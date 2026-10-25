@@ -53,7 +53,7 @@ treat them as ranges.
 
 | | |
 |---|---|
-| In-process pipeline (`make bench`) | ~0.9-1.9M events/s, 2 allocs per event batch slot |
+| In-process pipeline (`make bench`, 4 workers) | ~4-5M events/s, ~150 B and 0 allocs per event, batch P99 ~10-17 ms |
 | Window operator `Add` | ~130-150 ns/event, 0 allocs |
 | gRPC, 4 clients, batch 500 (`make stress`) | ~0.9M events/s, ack P99 ~4 ms |
 

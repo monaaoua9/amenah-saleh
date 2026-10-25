@@ -17,7 +17,7 @@ type sinkMsg struct {
 
 type staged struct {
 	id  uint64
-	res []event.Result
+	res [][]event.Result
 }
 
 // Output is held per checkpoint epoch and only released once that checkpoint
@@ -28,7 +28,9 @@ type sink struct {
 	al  *aligner[sinkMsg]
 	out func(event.Result)
 
-	pending []event.Result
+	// chunks exactly as the workers sent them: no copy, no regrowth
+	pending  [][]event.Result
+	pendingN int
 
 	mu sync.Mutex
 	st []staged
@@ -51,8 +53,9 @@ func (s *sink) handle(m sinkMsg) {
 		return
 	}
 	if m.barrier == 0 {
-		s.pending = append(s.pending, m.results...)
-		if max := s.e.cfg.MaxPending; max > 0 && len(s.pending) >= max {
+		s.pending = append(s.pending, m.results)
+		s.pendingN += len(m.results)
+		if max := s.e.cfg.MaxPending; max > 0 && s.pendingN >= max {
 			select {
 			case s.e.ckNow <- struct{}{}:
 			default: // one is already queued
@@ -67,7 +70,7 @@ func (s *sink) handle(m sinkMsg) {
 	s.st = append(s.st, staged{m.barrier, s.pending})
 	s.mu.Unlock()
 	snap, err := encodeResults(s.pending)
-	s.pending = nil
+	s.pending, s.pendingN = nil, 0
 
 	s.e.coord.Ack(m.barrier, "sink", snap, err)
 	for _, h := range s.al.release() {
@@ -80,21 +83,30 @@ func (s *sink) commit(id uint64) {
 	defer s.mu.Unlock()
 	i := 0
 	for ; i < len(s.st) && s.st[i].id <= id; i++ {
-		for _, r := range s.st[i].res {
-			s.out(r)
-			s.e.emitted.Add(1)
+		for _, chunk := range s.st[i].res {
+			for _, r := range chunk {
+				s.out(r)
+			}
+			s.e.emitted.Add(uint64(len(chunk)))
 		}
 	}
 	s.st = s.st[i:]
 }
 
-func encodeResults(r []event.Result) ([]byte, error) {
+func encodeResults(r [][]event.Result) ([]byte, error) {
 	var buf bytes.Buffer
 	err := gob.NewEncoder(&buf).Encode(r)
 	return buf.Bytes(), err
 }
 
-func decodeResults(b []byte) (r []event.Result, err error) {
-	err = gob.NewDecoder(bytes.NewReader(b)).Decode(&r)
-	return
+func decodeResults(b []byte) ([]event.Result, error) {
+	var chunks [][]event.Result
+	if err := gob.NewDecoder(bytes.NewReader(b)).Decode(&chunks); err != nil {
+		return nil, err
+	}
+	var flat []event.Result
+	for _, c := range chunks {
+		flat = append(flat, c...)
+	}
+	return flat, nil
 }
