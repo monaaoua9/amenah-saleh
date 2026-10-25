@@ -64,6 +64,8 @@ type Engine struct {
 	ckMu    sync.Mutex
 	ckNow   chan struct{}
 
+	committed sync.Map // producer -> highest seq inside a completed checkpoint
+
 	// what restore() found, for remote workers whose Init goes out later
 	restored bool
 	rblobs   [][]byte
@@ -234,6 +236,7 @@ func (e *Engine) restore(id uint64) error {
 		for p, seq := range m {
 			l := e.laneFor(p)
 			l.last[p] = max(l.last[p], seq)
+			e.committed.Store(p, l.last[p])
 		}
 	}
 
@@ -400,6 +403,7 @@ func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 	if err := e.store.Commit(id); err != nil {
 		return 0, err
 	}
+	e.noteCommitted(id)
 	e.sink.commit(id)
 	if err := e.store.MarkEmitted(id); err != nil {
 		return 0, err
@@ -408,6 +412,32 @@ func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 	e.ckCount.Add(1)
 	e.ckLastNs.Store(int64(time.Since(t0)))
 	return id, nil
+}
+
+// Committed is the highest sequence number of this producer that a completed
+// checkpoint covers. Events above it are lost if the engine dies right now.
+func (e *Engine) Committed(producer string) uint64 {
+	v, _ := e.committed.Load(producer)
+	seq, _ := v.(uint64)
+	return seq
+}
+
+func (e *Engine) noteCommitted(id uint64) {
+	for i := range e.lanes {
+		b, err := e.store.Get(id, laneTask(i))
+		if err != nil {
+			continue
+		}
+		m, err := decodeLast(b)
+		if err != nil {
+			continue
+		}
+		for p, seq := range m {
+			if seq > e.Committed(p) {
+				e.committed.Store(p, seq)
+			}
+		}
+	}
 }
 
 func (e *Engine) checkpointLoop(ctx context.Context) {

@@ -142,9 +142,12 @@ func (x *Batch) GetEvents() []*Event {
 }
 
 type Ack struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Producer      string                 `protobuf:"bytes,1,opt,name=producer,proto3" json:"producer,omitempty"`
-	LastSeq       uint64                 `protobuf:"varint,2,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Producer string                 `protobuf:"bytes,1,opt,name=producer,proto3" json:"producer,omitempty"`
+	LastSeq  uint64                 `protobuf:"varint,2,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`
+	// highest seq covered by a completed checkpoint: everything up to here
+	// survives a crash, anything after it must be replayed by the producer
+	CommittedSeq  uint64 `protobuf:"varint,3,opt,name=committed_seq,json=committedSeq,proto3" json:"committed_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -193,6 +196,13 @@ func (x *Ack) GetLastSeq() uint64 {
 	return 0
 }
 
+func (x *Ack) GetCommittedSeq() uint64 {
+	if x != nil {
+		return x.CommittedSeq
+	}
+	return 0
+}
+
 var File_proto_ingest_proto protoreflect.FileDescriptor
 
 const file_proto_ingest_proto_rawDesc = "" +
@@ -205,10 +215,11 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\x03seq\x18\x04 \x01(\x04R\x03seq\"K\n" +
 	"\x05Batch\x12\x1a\n" +
 	"\bproducer\x18\x01 \x01(\tR\bproducer\x12&\n" +
-	"\x06events\x18\x02 \x03(\v2\x0e.dspe.v1.EventR\x06events\"<\n" +
+	"\x06events\x18\x02 \x03(\v2\x0e.dspe.v1.EventR\x06events\"a\n" +
 	"\x03Ack\x12\x1a\n" +
 	"\bproducer\x18\x01 \x01(\tR\bproducer\x12\x19\n" +
-	"\blast_seq\x18\x02 \x01(\x04R\alastSeq24\n" +
+	"\blast_seq\x18\x02 \x01(\x04R\alastSeq\x12#\n" +
+	"\rcommitted_seq\x18\x03 \x01(\x04R\fcommittedSeq24\n" +
 	"\x06Ingest\x12*\n" +
 	"\x06Stream\x12\x0e.dspe.v1.Batch\x1a\f.dspe.v1.Ack(\x010\x01B6Z4github.com/monaaoua9/amenah-saleh/internal/ingest/pbb\x06proto3"
 

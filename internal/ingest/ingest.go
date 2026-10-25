@@ -17,6 +17,7 @@ import (
 type Submitter interface {
 	Submit(ctx context.Context, producer string, evs []event.Event) error
 	TrySubmit(ctx context.Context, producer string, evs []event.Event) error
+	Committed(producer string) uint64
 }
 
 type Server struct {
@@ -64,7 +65,7 @@ func (s *Server) Stream(st grpc.BidiStreamingServer[pb.Batch, pb.Ack]) error {
 		if n := len(evs); n > 0 {
 			last = evs[n-1].Seq
 		}
-		if err := st.Send(&pb.Ack{Producer: b.Producer, LastSeq: last}); err != nil {
+		if err := st.Send(&pb.Ack{Producer: b.Producer, LastSeq: last, CommittedSeq: s.sub.Committed(b.Producer)}); err != nil {
 			return err
 		}
 	}

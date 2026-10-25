@@ -23,6 +23,7 @@ func (f *fake) Submit(_ context.Context, _ string, evs []event.Event) error {
 	f.got = append(f.got, evs)
 	return f.err
 }
+func (f *fake) Committed(string) uint64 { return 0 }
 func (f *fake) TrySubmit(ctx context.Context, p string, evs []event.Event) error {
 	return f.Submit(ctx, p, evs)
 }

@@ -19,6 +19,9 @@ message Batch {
 message Ack {
   string producer = 1;
   uint64 last_seq = 2;
+  // highest seq covered by a completed checkpoint: everything up to here
+  // survives a crash, anything after it must be replayed by the producer
+  uint64 committed_seq = 3;
 }
 
 service Ingest {
