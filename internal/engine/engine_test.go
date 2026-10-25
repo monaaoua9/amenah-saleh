@@ -220,3 +220,42 @@ func TestMetricsOutput(t *testing.T) {
 		t.Fatal("no results counted as emitted")
 	}
 }
+
+func TestSubmitBlocksUntilCreditsFree(t *testing.T) {
+	cfg := testCfg(t.TempDir(), newCollector())
+	cfg.MaxInflight = 100
+	e := New(cfg)
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Stop()
+
+	e.credits.TryAcquire(100) // pretend the pipeline is full
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := e.Submit(ctx, "p", gen(10)); err != context.DeadlineExceeded {
+		t.Fatalf("got %v, want deadline exceeded while full", err)
+	}
+	if e.Stats().Inflight != 0 {
+		t.Fatalf("failed submit leaked inflight: %d", e.Stats().Inflight)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- e.Submit(context.Background(), "p", gen(10)) }()
+	select {
+	case <-done:
+		t.Fatal("submit returned while pipeline was full")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	e.credits.Release(100)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("submit still blocked after credits were freed")
+	}
+}
