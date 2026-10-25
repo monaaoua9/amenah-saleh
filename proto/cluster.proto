@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package dspe.v1;
+
+import "proto/ingest.proto";
+
+option go_package = "github.com/monaaoua9/amenah-saleh/internal/cluster/pb";
+
+message WindowConfig {
+  int64 size = 1;
+  int64 slide = 2;
+  int64 gap = 3;
+  int64 lateness = 4;
+  int64 disorder = 5;
+}
+
+// First message on every stream. Snapshots are only set when restoring: just
+// this worker's own when the worker count is unchanged, all of them (to be
+// filtered by key group) when it changed.
+message Init {
+  int32 worker_id = 1;
+  int32 workers = 2;
+  int32 lanes = 3;
+  WindowConfig window = 4;
+  repeated bytes snapshots = 5;
+  bool same_count = 6;
+}
+
+message Data {
+  int32 from = 1; // lane
+  repeated Event events = 2;
+  int64 at_ns = 3; // master's clock, echoed back untouched
+}
+
+message Barrier {
+  int32 from = 1;
+  uint64 id = 2;
+}
+
+message Punct {
+  int32 from = 1;
+  int64 wm = 2;
+}
+
+message ToWorker {
+  oneof msg {
+    Init init = 1;
+    Data data = 2;
+    Barrier barrier = 3;
+    Punct punct = 4;
+  }
+}
+
+message Result {
+  string key = 1;
+  int64 start = 2;
+  int64 end = 3;
+  int64 count = 4;
+  double sum = 5;
+  double min = 6;
+  double max = 7;
+  bool late = 8;
+}
+
+message Results {
+  repeated Result results = 1;
+}
+
+// barrier forwarded downstream to the sink, ordered after the results before it
+message SinkBarrier {
+  uint64 id = 1;
+}
+
+message Snap {
+  uint64 id = 1;
+  bytes data = 2;
+  string err = 3;
+}
+
+// one batch fully processed: returns its credits
+message Done {
+  int64 n = 1;
+  int64 at_ns = 2;
+  uint64 late = 3; // cumulative on this worker
+}
+
+message FromWorker {
+  oneof msg {
+    Results results = 1;
+    SinkBarrier sink_barrier = 2;
+    Snap snap = 3;
+    Done done = 4;
+  }
+}
+
+// Worker nodes dial the master; the worker is the gRPC client.
+service Cluster {
+  rpc Run(stream FromWorker) returns (stream ToWorker);
+}
