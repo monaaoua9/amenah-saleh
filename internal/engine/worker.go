@@ -19,15 +19,32 @@ type workerMsg struct {
 	wm      int64
 }
 
+// What a worker needs from its surroundings. In-process it's the engine; on a
+// worker node it's the gRPC stream back to the master.
+type workerEnv interface {
+	sink(ctx context.Context, m sinkMsg)
+	ack(id uint64, task string, data []byte, err error)
+	processed(n int, at time.Time)
+}
+
 type worker struct {
-	id int
-	in chan workerMsg
-	e  *Engine
-	op *window.Operator
-	al *aligner[workerMsg]
+	id  int
+	in  chan workerMsg
+	env workerEnv
+	op  *window.Operator
+	al  *aligner[workerMsg]
 
 	// last punctuation seen per lane; effective watermark is the min
 	laneWM []int64
+}
+
+func newWorker(id, lanes int, cfg window.Config, env workerEnv) *worker {
+	return &worker{
+		id: id, env: env,
+		op:     window.New(cfg),
+		al:     newAligner[workerMsg](lanes),
+		laneWM: slices.Repeat([]int64{math.MinInt64}, lanes),
+	}
 }
 
 func (w *worker) run(ctx context.Context) {
@@ -53,8 +70,8 @@ func (w *worker) handle(ctx context.Context, m workerMsg) {
 			return
 		}
 		snap, err := w.op.Snapshot()
-		w.e.coord.Ack(m.barrier, workerTask(w.id), snap, err)
-		w.send(ctx, sinkMsg{from: w.id, barrier: m.barrier})
+		w.env.ack(m.barrier, workerTask(w.id), snap, err)
+		w.env.sink(ctx, sinkMsg{from: w.id, barrier: m.barrier})
 		for _, h := range w.al.release() {
 			w.handle(ctx, h)
 		}
@@ -69,7 +86,7 @@ func (w *worker) handle(ctx context.Context, m workerMsg) {
 		var out []event.Result
 		w.op.Advance(func(r event.Result) { out = append(out, r) })
 		if len(out) > 0 {
-			w.send(ctx, sinkMsg{from: w.id, results: out})
+			w.env.sink(ctx, sinkMsg{from: w.id, results: out})
 		}
 
 	default:
@@ -90,16 +107,26 @@ func (w *worker) process(ctx context.Context, m workerMsg) {
 	batchPool.Put(m.batch)
 
 	if len(out) > 0 {
-		w.send(ctx, sinkMsg{from: w.id, results: out})
+		w.env.sink(ctx, sinkMsg{from: w.id, results: out})
 	}
 	// credits go back only after the sink took the output, so a slow sink throttles ingest
-	w.e.release(int64(n))
-	w.e.lat.Observe(time.Since(m.at))
+	w.env.processed(n, m.at)
 }
 
-func (w *worker) send(ctx context.Context, m sinkMsg) {
+type localEnv struct{ e *Engine }
+
+func (l localEnv) sink(ctx context.Context, m sinkMsg) {
 	select {
-	case w.e.sink.in <- m:
+	case l.e.sink.in <- m:
 	case <-ctx.Done():
 	}
+}
+
+func (l localEnv) ack(id uint64, task string, data []byte, err error) {
+	l.e.coord.Ack(id, task, data, err)
+}
+
+func (l localEnv) processed(n int, at time.Time) {
+	l.e.release(int64(n))
+	l.e.lat.Observe(time.Since(at))
 }

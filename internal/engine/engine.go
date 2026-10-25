@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +13,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/monaaoua9/amenah-saleh/internal/checkpoint"
+	cpb "github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/metrics"
 	"github.com/monaaoua9/amenah-saleh/internal/partition"
@@ -39,6 +38,10 @@ type Config struct {
 	// on top. 0 = no limit.
 	MaxPending int
 	OnResult   func(event.Result)
+
+	// Connected worker nodes. When set, Workers is taken from its length and the
+	// windows run on those nodes instead of in-process. Needs the Hash partitioner.
+	Remote []WorkerConn
 }
 
 type Stats struct {
@@ -52,6 +55,7 @@ type Engine struct {
 	cfg     Config
 	lanes   []*lane
 	workers []*worker
+	remotes []*remoteWorker
 	sink    *sink
 
 	credits *semaphore.Weighted
@@ -59,6 +63,11 @@ type Engine struct {
 	coord   *checkpoint.Coordinator
 	ckMu    sync.Mutex
 	ckNow   chan struct{}
+
+	// what restore() found, for remote workers whose Init goes out later
+	restored bool
+	rblobs   [][]byte
+	rsame    bool
 
 	lat      metrics.Histogram
 	ingested atomic.Uint64
@@ -68,12 +77,18 @@ type Engine struct {
 	ckCount  atomic.Uint64
 	ckLastNs atomic.Int64
 
-	done   chan struct{}
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	done     chan struct{}
+	runCtx   context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	failCh   chan error
+	failOnce sync.Once
 }
 
 func New(cfg Config) *Engine {
+	if cfg.Remote != nil {
+		cfg.Workers = len(cfg.Remote)
+	}
 	if cfg.Workers > partition.KeyGroups {
 		panic("workers exceed key groups")
 	}
@@ -86,7 +101,10 @@ func New(cfg Config) *Engine {
 	if cfg.MaxInflight == 0 {
 		cfg.MaxInflight = 1 << 16
 	}
-	return &Engine{cfg: cfg, done: make(chan struct{}), ckNow: make(chan struct{}, 1)}
+	return &Engine{
+		cfg: cfg, done: make(chan struct{}),
+		ckNow: make(chan struct{}, 1), failCh: make(chan error, 1),
+	}
 }
 
 func laneTask(i int) string   { return fmt.Sprintf("lane-%d", i) }
@@ -95,6 +113,11 @@ func workerTask(i int) string { return fmt.Sprintf("worker-%d", i) }
 // Start restores from the latest complete checkpoint if there is one.
 func (e *Engine) Start(ctx context.Context) error {
 	cfg := e.cfg
+	if cfg.Remote != nil {
+		if _, ok := cfg.Partitioner.(partition.Hash); !ok {
+			return errors.New("remote workers require the Hash partitioner")
+		}
+	}
 	e.credits = semaphore.NewWeighted(cfg.MaxInflight)
 	e.store = checkpoint.NewStore(cfg.CheckpointDir)
 
@@ -108,11 +131,15 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.lanes = append(e.lanes, &lane{id: i, in: make(chan laneMsg, cfg.QueueDepth), e: e, last: map[string]uint64{}})
 	}
 	for i := 0; i < cfg.Workers; i++ {
-		e.workers = append(e.workers, &worker{
-			id: i, in: make(chan workerMsg, cfg.QueueDepth), e: e,
-			op: window.New(cfg.Window), al: newAligner[workerMsg](cfg.Lanes),
-			laneWM: slices.Repeat([]int64{math.MinInt64}, cfg.Lanes),
-		})
+		in := make(chan workerMsg, cfg.QueueDepth)
+		if cfg.Remote != nil {
+			e.workers = append(e.workers, &worker{id: i, in: in}) // routing slot only
+			e.remotes = append(e.remotes, &remoteWorker{id: i, conn: cfg.Remote[i], e: e, in: in})
+			continue
+		}
+		w := newWorker(i, cfg.Lanes, cfg.Window, localEnv{e})
+		w.in = in
+		e.workers = append(e.workers, w)
 	}
 
 	last, ok := e.store.Latest()
@@ -127,14 +154,27 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 	e.coord = checkpoint.NewCoordinator(e.store, cfg.Lanes+cfg.Workers+1, last)
 
+	for _, r := range e.remotes {
+		if err := r.hello(); err != nil {
+			return fmt.Errorf("init worker %d: %w", r.id, err)
+		}
+	}
+
 	ctx, e.cancel = context.WithCancel(ctx)
+	e.runCtx = ctx
 	spawn := func(fn func(context.Context)) {
 		e.wg.Add(1)
 		go func() { defer e.wg.Done(); fn(ctx) }()
 	}
 	spawn(e.sink.run)
 	for _, w := range e.workers {
-		spawn(w.run)
+		if w.op != nil {
+			spawn(w.run)
+		}
+	}
+	for _, r := range e.remotes {
+		spawn(r.sendLoop)
+		spawn(r.recvLoop)
 	}
 	for _, l := range e.lanes {
 		spawn(l.run)
@@ -205,9 +245,14 @@ func (e *Engine) restore(id uint64) error {
 		}
 		blobs[i] = b
 	}
+	same := old.Workers == e.cfg.Workers
+	e.restored, e.rblobs, e.rsame = true, blobs, same
 
-	if old.Workers == e.cfg.Workers {
+	if same {
 		for i, w := range e.workers {
+			if w.op == nil {
+				continue
+			}
 			if err := w.op.Restore(blobs[i]); err != nil {
 				return err
 			}
@@ -220,6 +265,9 @@ func (e *Engine) restore(id uint64) error {
 		return fmt.Errorf("worker count changed %d -> %d but partitioner is not keyed", old.Workers, e.cfg.Workers)
 	}
 	for _, w := range e.workers {
+		if w.op == nil {
+			continue
+		}
 		w := w
 		keep := func(k string) bool { return keyed.Owner(k, e.cfg.Workers) == w.id }
 		if err := w.op.RestoreMerge(blobs, keep); err != nil {
@@ -233,7 +281,21 @@ func (e *Engine) restore(id uint64) error {
 func (e *Engine) Stop() {
 	close(e.done)
 	e.cancel()
+	for _, r := range e.remotes {
+		r.conn.Close() // unblocks its Recv
+	}
 	e.wg.Wait()
+}
+
+// Failed delivers the first fatal error from a remote worker. The engine
+// cancels itself when that happens; the caller should Stop it and rebuild.
+func (e *Engine) Failed() <-chan error { return e.failCh }
+
+func (e *Engine) fail(err error) {
+	e.failOnce.Do(func() {
+		e.failCh <- err
+		e.cancel()
+	})
 }
 
 func (e *Engine) release(n int64) {
@@ -266,12 +328,22 @@ func (e *Engine) submit(ctx context.Context, producer string, evs []event.Event,
 	if n > e.cfg.MaxInflight {
 		return fmt.Errorf("batch of %d exceeds max inflight %d", n, e.cfg.MaxInflight)
 	}
-	if block {
-		if err := e.credits.Acquire(ctx, n); err != nil {
+	if !e.credits.TryAcquire(n) {
+		if !block {
+			return ErrOverloaded
+		}
+		// waiting on credits that a dead engine will never return would hang
+		actx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(e.runCtx, cancel)
+		err := e.credits.Acquire(actx, n)
+		stop()
+		cancel()
+		if err != nil {
+			if e.runCtx.Err() != nil {
+				return ErrStopped
+			}
 			return err
 		}
-	} else if !e.credits.TryAcquire(n) {
-		return ErrOverloaded
 	}
 	e.inflight.Add(n)
 
@@ -284,6 +356,9 @@ func (e *Engine) submit(ctx context.Context, producer string, evs []event.Event,
 		e.release(n)
 		return ctx.Err()
 	case <-e.done:
+		e.release(n)
+		return ErrStopped
+	case <-e.runCtx.Done():
 		e.release(n)
 		return ErrStopped
 	}
@@ -367,7 +442,20 @@ func (e *Engine) Stats() Stats {
 		P99:            e.lat.Quantile(0.99),
 	}
 	for _, w := range e.workers {
-		s.Late += w.op.Late()
+		if w.op != nil {
+			s.Late += w.op.Late()
+		}
+	}
+	for _, r := range e.remotes {
+		s.Late += r.late.Load()
 	}
 	return s
+}
+
+func windowToWire(c window.Config) *cpb.WindowConfig {
+	return &cpb.WindowConfig{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder}
+}
+
+func windowFromWire(c *cpb.WindowConfig) window.Config {
+	return window.Config{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder}
 }
