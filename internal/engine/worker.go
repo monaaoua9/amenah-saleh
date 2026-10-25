@@ -93,7 +93,7 @@ func (w *worker) process(ctx context.Context, m workerMsg) {
 		w.send(ctx, sinkMsg{from: w.id, results: out})
 	}
 	// credits go back only after the sink took the output, so a slow sink throttles ingest
-	w.e.credits.Release(int64(n))
+	w.e.release(int64(n))
 	w.e.lat.Observe(time.Since(m.at))
 }
 

@@ -37,8 +37,10 @@ type Config struct {
 }
 
 type Stats struct {
-	Ingested, Dups, Late uint64
-	P50, P99             time.Duration
+	Ingested, Dups, Late, Emitted, Checkpoints uint64
+	Inflight                                   int64
+	LastCheckpoint                             time.Duration
+	P50, P99                                   time.Duration
 }
 
 type Engine struct {
@@ -55,6 +57,10 @@ type Engine struct {
 	lat      metrics.Histogram
 	ingested atomic.Uint64
 	dups     atomic.Uint64
+	emitted  atomic.Uint64
+	inflight atomic.Int64
+	ckCount  atomic.Uint64
+	ckLastNs atomic.Int64
 
 	done   chan struct{}
 	cancel context.CancelFunc
@@ -180,6 +186,11 @@ func (e *Engine) Stop() {
 	e.wg.Wait()
 }
 
+func (e *Engine) release(n int64) {
+	e.inflight.Add(-n)
+	e.credits.Release(n)
+}
+
 // Shutdown takes a last checkpoint so nothing since the previous one is lost,
 // then stops. Stop alone is the crash path.
 func (e *Engine) Shutdown(ctx context.Context) error {
@@ -212,6 +223,7 @@ func (e *Engine) submit(ctx context.Context, producer string, evs []event.Event,
 	} else if !e.credits.TryAcquire(n) {
 		return ErrOverloaded
 	}
+	e.inflight.Add(n)
 
 	l := e.lanes[partition.Hash64(producer)%uint64(len(e.lanes))]
 	select {
@@ -219,10 +231,10 @@ func (e *Engine) submit(ctx context.Context, producer string, evs []event.Event,
 		e.ingested.Add(uint64(n))
 		return nil
 	case <-ctx.Done():
-		e.credits.Release(n)
+		e.release(n)
 		return ctx.Err()
 	case <-e.done:
-		e.credits.Release(n)
+		e.release(n)
 		return ErrStopped
 	}
 }
@@ -243,6 +255,7 @@ func (e *Engine) AdvanceWatermark(ctx context.Context, ts int64) error {
 func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 	e.ckMu.Lock()
 	defer e.ckMu.Unlock()
+	t0 := time.Now()
 
 	id := e.coord.Begin()
 	for _, l := range e.lanes {
@@ -263,6 +276,8 @@ func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 		return 0, err
 	}
 	e.store.Prune(3)
+	e.ckCount.Add(1)
+	e.ckLastNs.Store(int64(time.Since(t0)))
 	return id, nil
 }
 
@@ -283,10 +298,14 @@ func (e *Engine) checkpointLoop(ctx context.Context) {
 
 func (e *Engine) Stats() Stats {
 	s := Stats{
-		Ingested: e.ingested.Load(),
-		Dups:     e.dups.Load(),
-		P50:      e.lat.Quantile(0.50),
-		P99:      e.lat.Quantile(0.99),
+		Ingested:       e.ingested.Load(),
+		Dups:           e.dups.Load(),
+		Emitted:        e.emitted.Load(),
+		Inflight:       e.inflight.Load(),
+		Checkpoints:    e.ckCount.Load(),
+		LastCheckpoint: time.Duration(e.ckLastNs.Load()),
+		P50:            e.lat.Quantile(0.50),
+		P99:            e.lat.Quantile(0.99),
 	}
 	for _, w := range e.workers {
 		s.Late += w.op.Late()

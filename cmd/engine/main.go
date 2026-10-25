@@ -32,6 +32,7 @@ func main() {
 	dir := flag.String("ckdir", "./checkpoints", "checkpoint dir")
 	every := flag.Duration("ckevery", 5*time.Second, "checkpoint interval")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
+	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
 	flag.Parse()
 
@@ -51,6 +52,12 @@ func main() {
 	defer stop()
 	if err := eng.Start(ctx); err != nil {
 		log.Fatal(err)
+	}
+
+	if *metricsAddr != "" {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) { eng.WriteMetrics(w) })
+		go http.ListenAndServe(*metricsAddr, mux)
 	}
 
 	lis, err := net.Listen("tcp", *addr)

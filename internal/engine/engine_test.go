@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -189,5 +190,33 @@ func TestShutdownCheckpointsTail(t *testing.T) {
 	// the whole replay should have been recognised as already processed
 	if got := e2.Stats().Dups; got != uint64(len(evs)) {
 		t.Fatalf("dups = %d, want %d", got, len(evs))
+	}
+}
+
+func TestMetricsOutput(t *testing.T) {
+	c := newCollector()
+	e := New(testCfg(t.TempDir(), c))
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Stop()
+	feed(t, e, gen(2000))
+	finish(t, e)
+
+	var buf strings.Builder
+	e.WriteMetrics(&buf)
+	out := buf.String()
+	for _, want := range []string{
+		"dspe_events_ingested_total 2000",
+		"dspe_inflight_events 0",
+		"dspe_checkpoints_total 1",
+		`dspe_batch_latency_seconds{quantile="0.99"}`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output: %s", want, out)
+		}
+	}
+	if e.Stats().Emitted == 0 {
+		t.Fatal("no results counted as emitted")
 	}
 }

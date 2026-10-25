@@ -78,7 +78,7 @@ func (l *lane) route(ctx context.Context, m laneMsg, parts []*[]event.Event) {
 	}
 	if dups > 0 {
 		l.e.dups.Add(uint64(dups))
-		l.e.credits.Release(int64(dups))
+		l.e.release(int64(dups))
 	}
 	for w, p := range parts {
 		if p == nil {

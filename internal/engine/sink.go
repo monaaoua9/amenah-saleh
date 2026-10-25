@@ -76,6 +76,7 @@ func (s *sink) commit(id uint64) {
 	for ; i < len(s.st) && s.st[i].id <= id; i++ {
 		for _, r := range s.st[i].res {
 			s.out(r)
+			s.e.emitted.Add(1)
 		}
 	}
 	s.st = s.st[i:]
