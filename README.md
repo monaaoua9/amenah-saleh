@@ -57,18 +57,44 @@ Useful flags (`go run ./cmd/engine -h` for all of them):
 
 ## Cluster demo
 
+One command runs the whole thing (builds into a temp dir, cleans up after):
+
+```
+bash scripts/demo.sh        # or: make demo
+```
+
+It starts a master and three worker processes, runs two producers for 16
+seconds, kills a worker after 5, and adds a replacement 3 seconds later. Output
+from a run on a laptop:
+
+```
+== killing worker node 2
+== starting a replacement node
+
+== master log
+master listening on :7070
+waiting for 3 worker nodes
+engine failed: worker 0 lost: rpc error: code = Canceled desc = context canceled; recovering
+waiting for 3 worker nodes
+restored from checkpoint 8
+
+== load generator
+events=7082000  442598 ev/s  ack p50=1.048576ms p99=4.194304ms
+```
+
+The run finishes without errors on the producer side: they got `Unavailable`
+while the engine was down and retried by themselves. `ingest.Producer`
+resends whatever the last `committed_seq` in an ack doesn't cover, and
+sequence-number dedup removes the overlap. The throughput figure includes the
+seconds of downtime.
+
+By hand:
+
 ```
 go run ./cmd/engine -role master -expect 3 -ckdir ./ck    # ingest + coordinator on :7070
 go run ./cmd/engine -role worker -master localhost:7070   # start three of these
 go run ./cmd/loadgen -c 4 -d 20s                          # producers
 ```
-
-Kill a worker while the load generator is running. The master logs
-`engine failed ... recovering`, producers get `Unavailable` and retry by
-themselves, and when a replacement node connects the engine restores from the
-last checkpoint. The producer library (`ingest.Producer`) resends whatever the
-last `committed_seq` in an ack doesn't cover, and sequence-number dedup removes
-the overlap, so the run carries on without anyone touching it.
 
 ## Guarantees and how they're checked
 

@@ -13,6 +13,9 @@ cluster:
 node:
 	go run ./cmd/engine -role worker
 
+demo:
+	bash scripts/demo.sh
+
 stress:
 	go run ./cmd/loadgen -d 10s -c 4
 
