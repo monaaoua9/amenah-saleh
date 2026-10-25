@@ -39,6 +39,9 @@ Useful server flags: `-window`, `-slide` (sliding windows), `-gap` (session wind
   Credits return only after the sink accepted the output.
 - **Checkpoints**: numbered barriers, aligned per task, snapshots written
   atomically, a checkpoint exists only once its marker file does.
+- **Rescaling**: restore into a different number of lanes and workers. State is
+  split by key group (128 fixed groups, workers own ranges) and producer
+  offsets are re-homed by producer hash. Needs the `Hash` partitioner.
 - **Exactly-once**: restore, producer replays, per-producer `Seq` dedup in the
   lane, sink output staged inside the checkpoint and released after it is
   durable.
@@ -58,7 +61,6 @@ The latency histogram is log-bucketed, so quantiles are within ~25%.
 
 ## Not done
 
-- Rescaling on restore (same lane/worker counts required).
 - A crash between sink emit and its marker re-sends that one epoch, so the
   guarantee for it is at-least-once; downstream dedups on (key, window start).
 - Single node. No networked workers, no leader election.

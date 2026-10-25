@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -68,6 +69,9 @@ type Engine struct {
 }
 
 func New(cfg Config) *Engine {
+	if cfg.Workers > partition.KeyGroups {
+		panic("workers exceed key groups")
+	}
 	if cfg.Partitioner == nil {
 		cfg.Partitioner = partition.Hash{}
 	}
@@ -157,22 +161,63 @@ func (e *Engine) replayStaged(id uint64) error {
 	return e.store.MarkEmitted(id)
 }
 
+type meta struct{ Lanes, Workers int }
+
+func (e *Engine) laneFor(producer string) *lane {
+	return e.lanes[partition.Hash64(producer)%uint64(len(e.lanes))]
+}
+
+// Restore works across a change in lane/worker count: producer offsets are
+// re-homed by producer hash, window state by key group.
 func (e *Engine) restore(id uint64) error {
-	for _, l := range e.lanes {
-		b, err := e.store.Get(id, laneTask(l.id))
-		if err != nil {
-			return err
-		}
-		if err := l.restore(b); err != nil {
+	old := meta{e.cfg.Lanes, e.cfg.Workers} // checkpoints from before meta existed
+	if b, err := e.store.Get(id, "meta"); err == nil {
+		if err := json.Unmarshal(b, &old); err != nil {
 			return err
 		}
 	}
-	for _, w := range e.workers {
-		b, err := e.store.Get(id, workerTask(w.id))
+
+	for i := 0; i < old.Lanes; i++ {
+		b, err := e.store.Get(id, laneTask(i))
 		if err != nil {
 			return err
 		}
-		if err := w.op.Restore(b); err != nil {
+		m, err := decodeLast(b)
+		if err != nil {
+			return err
+		}
+		for p, seq := range m {
+			l := e.laneFor(p)
+			l.last[p] = max(l.last[p], seq)
+		}
+	}
+
+	blobs := make([][]byte, old.Workers)
+	for i := range blobs {
+		b, err := e.store.Get(id, workerTask(i))
+		if err != nil {
+			return err
+		}
+		blobs[i] = b
+	}
+
+	if old.Workers == e.cfg.Workers {
+		for i, w := range e.workers {
+			if err := w.op.Restore(blobs[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	keyed, ok := e.cfg.Partitioner.(partition.Keyed)
+	if !ok {
+		return fmt.Errorf("worker count changed %d -> %d but partitioner is not keyed", old.Workers, e.cfg.Workers)
+	}
+	for _, w := range e.workers {
+		w := w
+		keep := func(k string) bool { return keyed.Owner(k, e.cfg.Workers) == w.id }
+		if err := w.op.RestoreMerge(blobs, keep); err != nil {
 			return err
 		}
 	}
@@ -266,6 +311,10 @@ func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 		}
 	}
 	if err := e.coord.Wait(ctx, id); err != nil {
+		return 0, err
+	}
+	mb, _ := json.Marshal(meta{e.cfg.Lanes, e.cfg.Workers})
+	if err := e.store.Put(id, "meta", mb); err != nil {
 		return 0, err
 	}
 	if err := e.store.Commit(id); err != nil {

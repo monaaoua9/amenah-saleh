@@ -6,10 +6,24 @@ type Partitioner interface {
 	Pick(key string, n int) int
 }
 
+// Keyed partitioners map a key to a stable owner, which is what lets state be
+// re-split when the worker count changes.
+type Keyed interface {
+	Partitioner
+	Owner(key string, n int) int
+}
+
+// fixed number of key groups; workers own contiguous ranges of them
+const KeyGroups = 128
+
+func KeyGroup(key string) int { return int(Hash64(key) % KeyGroups) }
+
 type Hash struct{}
 
-func (Hash) Pick(key string, n int) int {
-	return int(Hash64(key) % uint64(n))
+func (h Hash) Pick(key string, n int) int { return h.Owner(key, n) }
+
+func (Hash) Owner(key string, n int) int {
+	return KeyGroup(key) * n / KeyGroups
 }
 
 // RoundRobin ignores the key, so keyed windows end up split across workers.

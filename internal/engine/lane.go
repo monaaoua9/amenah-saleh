@@ -110,7 +110,7 @@ func (l *lane) broadcast(ctx context.Context, m workerMsg) {
 	}
 }
 
-func (l *lane) restore(b []byte) error {
-	l.last = map[string]uint64{}
-	return gob.NewDecoder(bytes.NewReader(b)).Decode(&l.last)
+func decodeLast(b []byte) (m map[string]uint64, err error) {
+	err = gob.NewDecoder(bytes.NewReader(b)).Decode(&m)
+	return
 }

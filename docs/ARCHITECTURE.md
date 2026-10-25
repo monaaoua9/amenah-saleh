@@ -61,6 +61,12 @@ by construction and nothing needs recording. Snapshots are written
 tmp + fsync + rename; a checkpoint only exists once `_COMPLETE` is written.
 Last 3 are kept. Profile a running server with `-pprof :6060`.
 
+**Rescaling.** Keys map to one of 128 key groups and a worker owns a range
+of them. A checkpoint records the lane/worker counts; on restore each new
+worker loads every old worker snapshot and keeps the keys it now owns, and
+each producer's last `Seq` moves to the lane its hash selects. Requires a
+keyed partitioner (`Hash`); round-robin refuses.
+
 **Exactly-once.** State is restored from the last complete checkpoint, the
 producer replays from any point at or before it, and lanes drop `Seq <= last`
 per producer. Sink output of an uncommitted epoch is discarded on crash and
@@ -73,8 +79,8 @@ identical to a run with no crash.
   `_EMITTED` marker is missing, so a crash never loses an epoch. A crash
   between the emit and the marker re-sends it: at-least-once for that one
   epoch, downstream dedups on (key, window start).
-- Restore requires the same lane/worker counts. Rescaling needs key-group
-  state.
+- After a rescale the watermark restarts at the slowest old worker's, so a very
+  late event can be accepted that an unscaled run would have dropped.
 - `Advance` scans all open windows once per batch; fine up to ~100k open
   windows, after that use a timer heap.
 - Producers must send contiguous increasing `Seq` and replay from the last

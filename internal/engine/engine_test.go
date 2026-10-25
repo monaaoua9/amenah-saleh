@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/partition"
 	"github.com/monaaoua9/amenah-saleh/internal/window"
 )
 
@@ -257,5 +258,73 @@ func TestSubmitBlocksUntilCreditsFree(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("submit still blocked after credits were freed")
+	}
+}
+
+func TestRescaleOnRestore(t *testing.T) {
+	evs := gen(20000)
+
+	base := newCollector()
+	eb := New(testCfg(t.TempDir(), base))
+	if err := eb.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, eb, evs)
+	finish(t, eb)
+	eb.Stop()
+
+	for _, tc := range []struct{ lanes, workers int }{{3, 7}, {1, 2}, {2, 4}} {
+		dir := t.TempDir()
+		got := newCollector()
+
+		e1 := New(testCfg(dir, got)) // 2 lanes, 4 workers
+		if err := e1.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		feed(t, e1, evs[:12000])
+		if _, err := e1.Checkpoint(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		e1.Stop()
+
+		cfg := testCfg(dir, got)
+		cfg.Lanes, cfg.Workers = tc.lanes, tc.workers
+		e2 := New(cfg)
+		if err := e2.Start(context.Background()); err != nil {
+			t.Fatalf("%+v: %v", tc, err)
+		}
+		feed(t, e2, evs)
+		finish(t, e2)
+		e2.Stop()
+
+		if got.n != base.n {
+			t.Fatalf("%+v: emitted %d results, want %d", tc, got.n, base.n)
+		}
+		for k, w := range base.res {
+			g, ok := got.res[k]
+			if !ok || g.Count != w.Count || g.Sum != w.Sum {
+				t.Fatalf("%+v: window %s: got %+v want %+v", tc, k, g, w)
+			}
+		}
+	}
+}
+
+func TestRescaleNeedsKeyedPartitioner(t *testing.T) {
+	dir := t.TempDir()
+	e1 := New(testCfg(dir, newCollector()))
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, gen(1000))
+	if _, err := e1.Checkpoint(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e1.Stop()
+
+	cfg := testCfg(dir, newCollector())
+	cfg.Workers = 3
+	cfg.Partitioner = &partition.RoundRobin{}
+	if err := New(cfg).Start(context.Background()); err == nil {
+		t.Fatal("expected error rescaling with a non-keyed partitioner")
 	}
 }

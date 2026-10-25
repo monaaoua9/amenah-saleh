@@ -167,22 +167,46 @@ func (o *Operator) Snapshot() ([]byte, error) {
 }
 
 func (o *Operator) Restore(b []byte) error {
-	var s snap
-	if err := gob.NewDecoder(bytes.NewReader(b)).Decode(&s); err != nil {
-		return err
-	}
-	o.wins = make(map[wkey]*acc, len(s.Entries))
-	for _, e := range s.Entries {
-		a := e.A
-		o.wins[e.K] = &a
-	}
+	return o.RestoreMerge([][]byte{b}, nil)
+}
+
+// RestoreMerge rebuilds state from several snapshots, keeping only keys that
+// keep() accepts (nil keeps all). This is the rescale path: a new worker pulls
+// its share out of every old worker's snapshot.
+// The watermark comes back as the slowest snapshot's, so it never runs ahead
+// of data we might still receive. Costs: after a rescale a very late event
+// can be accepted that an unscaled run would have dropped.
+func (o *Operator) RestoreMerge(blobs [][]byte, keep func(key string) bool) error {
+	o.wins = make(map[wkey]*acc)
 	o.sess = make(map[string][]*session)
-	for _, e := range s.Sess {
-		x := e.S
-		o.sess[e.Key] = append(o.sess[e.Key], &x)
+	o.late.Store(0)
+
+	var wm Watermark
+	for _, b := range blobs {
+		var s snap
+		if err := gob.NewDecoder(bytes.NewReader(b)).Decode(&s); err != nil {
+			return err
+		}
+		for _, e := range s.Entries {
+			if keep == nil || keep(e.K.Key) {
+				a := e.A
+				o.wins[e.K] = &a
+			}
+		}
+		for _, e := range s.Sess {
+			if keep == nil || keep(e.Key) {
+				x := e.S
+				o.sess[e.Key] = append(o.sess[e.Key], &x)
+			}
+		}
+		if keep == nil {
+			o.late.Add(s.Late)
+		}
+		if s.WM.Init && (!wm.Init || s.WM.Max < wm.Max) {
+			wm.Max, wm.Init = s.WM.Max, true
+		}
 	}
-	o.wm = s.WM
-	o.wm.Disorder = o.cfg.Disorder
-	o.late.Store(s.Late)
+	wm.Disorder = o.cfg.Disorder
+	o.wm = wm
 	return nil
 }
