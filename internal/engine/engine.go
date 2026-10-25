@@ -180,6 +180,14 @@ func (e *Engine) Stop() {
 	e.wg.Wait()
 }
 
+// Shutdown takes a last checkpoint so nothing since the previous one is lost,
+// then stops. Stop alone is the crash path.
+func (e *Engine) Shutdown(ctx context.Context) error {
+	_, err := e.Checkpoint(ctx)
+	e.Stop()
+	return err
+}
+
 func (e *Engine) Submit(ctx context.Context, producer string, evs []event.Event) error {
 	return e.submit(ctx, producer, evs, true)
 }

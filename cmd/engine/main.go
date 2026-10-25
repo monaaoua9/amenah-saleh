@@ -68,7 +68,11 @@ func main() {
 		select {
 		case <-ctx.Done():
 			g.GracefulStop()
-			eng.Stop()
+			sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := eng.Shutdown(sctx); err != nil {
+				log.Printf("final checkpoint failed: %v", err)
+			}
 			return
 		case <-t.C:
 			s := eng.Stats()

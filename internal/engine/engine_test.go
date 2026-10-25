@@ -164,3 +164,30 @@ func TestStagedOutputSurvivesCrashBeforeEmit(t *testing.T) {
 		t.Fatalf("replayed %d results, want %d", second.n, first.n)
 	}
 }
+
+func TestShutdownCheckpointsTail(t *testing.T) {
+	dir := t.TempDir()
+	evs := gen(3000)
+
+	e1 := New(testCfg(dir, newCollector()))
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, evs)
+	if err := e1.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	e2 := New(testCfg(dir, newCollector()))
+	if err := e2.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e2.Stop()
+	feed(t, e2, evs)
+	finish(t, e2)
+
+	// the whole replay should have been recognised as already processed
+	if got := e2.Stats().Dups; got != uint64(len(evs)) {
+		t.Fatalf("dups = %d, want %d", got, len(evs))
+	}
+}
