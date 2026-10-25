@@ -22,7 +22,7 @@ make stress    # gRPC load generator against a running server
 make proto     # regenerate protobuf (needs protoc, protoc-gen-go, protoc-gen-go-grpc)
 ```
 
-Useful server flags: `-window`, `-slide` (sliding windows), `-lateness`,
+Useful server flags: `-window`, `-slide` (sliding windows), `-gap` (session windows), `-lateness`,
 `-disorder`, `-inflight`, `-shed` (reject instead of stall), `-ckevery`, `-ckdir`,
 `-metrics :9090` (Prometheus text at /metrics), `-pprof :6060`.
 
@@ -30,7 +30,7 @@ Useful server flags: `-window`, `-slide` (sliding windows), `-lateness`,
 
 - **Ingestion**: bidirectional gRPC stream, protobuf. A producer is pinned to a
   lane; events are routed to workers by `Hash(key)` or `RoundRobin`.
-- **Event time**: tumbling and sliding windows, bounded out-of-orderness
+- **Event time**: tumbling, sliding and session windows, bounded out-of-orderness
   watermark, allowed lateness with refire, late events counted and dropped.
   Manual watermark punctuation uses the min across lanes.
 - **Backpressure**: bounded channels plus a cap on total in-flight events.
@@ -56,7 +56,6 @@ The latency histogram is log-bucketed, so quantiles are within ~25%.
 
 ## Not done
 
-- Session windows.
 - Rescaling on restore (same lane/worker counts required).
 - A crash between sink emit and its marker re-sends that one epoch, so the
   guarantee for it is at-least-once; downstream dedups on (key, window start).

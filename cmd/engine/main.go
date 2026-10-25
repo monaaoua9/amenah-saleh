@@ -27,6 +27,7 @@ func main() {
 	inflight := flag.Int64("inflight", 1<<17, "max in-flight events")
 	size := flag.Int64("window", 1000, "window size, ms")
 	slide := flag.Int64("slide", 0, "slide for sliding windows, ms (0 = tumbling)")
+	gap := flag.Int64("gap", 0, "session gap, ms (> 0 switches to session windows)")
 	lateness := flag.Int64("lateness", 2000, "allowed lateness, ms")
 	disorder := flag.Int64("disorder", 500, "max out-of-orderness, ms")
 	dir := flag.String("ckdir", "./checkpoints", "checkpoint dir")
@@ -43,7 +44,7 @@ func main() {
 	var out atomic.Uint64
 	eng := engine.New(engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
-		Window:        window.Config{Size: *size, Slide: *slide, Lateness: *lateness, Disorder: *disorder},
+		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder},
 		CheckpointDir: *dir, CheckpointEvery: *every,
 		OnResult: func(r event.Result) { out.Add(1) },
 	})

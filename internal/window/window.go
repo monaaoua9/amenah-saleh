@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Size     int64 // ms
 	Slide    int64 // ms, 0 means tumbling (slide == size)
+	Gap      int64 // ms of silence that closes a session; > 0 switches to session windows
 	Lateness int64 // ms a fired window is kept around for stragglers
 	Disorder int64 // ms, feeds the watermark
 }
@@ -31,6 +32,7 @@ type acc struct {
 type Operator struct {
 	cfg  Config
 	wins map[wkey]*acc
+	sess map[string][]*session
 	wm   Watermark
 	late atomic.Uint64
 }
@@ -39,11 +41,16 @@ func New(cfg Config) *Operator {
 	return &Operator{
 		cfg:  cfg,
 		wins: make(map[wkey]*acc),
+		sess: make(map[string][]*session),
 		wm:   Watermark{Disorder: cfg.Disorder},
 	}
 }
 
 func (o *Operator) Add(e event.Event, emit func(event.Result)) {
+	if o.cfg.Gap > 0 {
+		o.addSession(e)
+		return
+	}
 	size := o.cfg.Size
 	slide := o.cfg.Slide
 	if slide <= 0 {
@@ -91,6 +98,10 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 
 // call once per batch, not per event
 func (o *Operator) Advance(emit func(event.Result)) {
+	if o.cfg.Gap > 0 {
+		o.advanceSessions(emit)
+		return
+	}
 	wm := o.wm.Current()
 	for k, a := range o.wins {
 		end := k.Start + o.cfg.Size
@@ -111,7 +122,13 @@ func (o *Operator) AdvanceTo(ts int64) {
 
 func (o *Operator) Late() uint64 { return o.late.Load() }
 
-func (o *Operator) Open() int { return len(o.wins) }
+func (o *Operator) Open() int {
+	n := len(o.wins)
+	for _, l := range o.sess {
+		n += len(l)
+	}
+	return n
+}
 
 func toResult(k wkey, a *acc, size int64) event.Result {
 	return event.Result{
@@ -127,6 +144,7 @@ type entry struct {
 
 type snap struct {
 	Entries []entry
+	Sess    []sessEntry
 	WM      Watermark
 	Late    uint64
 }
@@ -135,6 +153,11 @@ func (o *Operator) Snapshot() ([]byte, error) {
 	s := snap{WM: o.wm, Late: o.late.Load(), Entries: make([]entry, 0, len(o.wins))}
 	for k, a := range o.wins {
 		s.Entries = append(s.Entries, entry{k, *a})
+	}
+	for k, l := range o.sess {
+		for _, x := range l {
+			s.Sess = append(s.Sess, sessEntry{k, *x})
+		}
 	}
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(s); err != nil {
@@ -152,6 +175,11 @@ func (o *Operator) Restore(b []byte) error {
 	for _, e := range s.Entries {
 		a := e.A
 		o.wins[e.K] = &a
+	}
+	o.sess = make(map[string][]*session)
+	for _, e := range s.Sess {
+		x := e.S
+		o.sess[e.Key] = append(o.sess[e.Key], &x)
 	}
 	o.wm = s.WM
 	o.wm.Disorder = o.cfg.Disorder

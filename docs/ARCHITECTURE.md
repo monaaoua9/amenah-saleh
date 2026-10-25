@@ -37,7 +37,7 @@ order holds and `Seq` dedup is a single map lookup. Lanes route each event to a
 worker with `Hash` (FNV-1a, keyed state stays on one worker) or `RoundRobin`
 (stateless stages only; it splits keyed windows).
 
-**Event time** (`internal/window`). Tumbling or sliding windows on event time. The
+**Event time** (`internal/window`). Tumbling, sliding or session (`Gap`) windows on event time. Sessions merge when an event bridges two of them and fire once the watermark passes last-event + gap; they have no allowed lateness. The
 watermark is `max(event time) - Disorder`. A window fires when the watermark
 passes its end, stays around for `Lateness` ms and re-fires (`Late: true`) if
 stragglers land in it, and anything older than that is counted and dropped.

@@ -94,3 +94,44 @@ func TestSlidingAssignsToOverlappingWindows(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestSessionMergesAndFires(t *testing.T) {
+	o := New(Config{Gap: 1000, Disorder: 10000})
+	run(o,
+		event.Event{Key: "a", Value: 1, Time: 0},
+		event.Event{Key: "a", Value: 2, Time: 2000}, // separate: 0+1000 < 2000
+	)
+	if o.Open() != 2 {
+		t.Fatalf("open = %d, want 2", o.Open())
+	}
+	run(o, event.Event{Key: "a", Value: 4, Time: 1000}) // bridges both
+	if o.Open() != 1 {
+		t.Fatalf("open = %d after bridge, want 1", o.Open())
+	}
+
+	o.AdvanceTo(100000)
+	var got []event.Result
+	o.Advance(func(r event.Result) { got = append(got, r) })
+	if len(got) != 1 || got[0].Count != 3 || got[0].Sum != 7 || got[0].Start != 0 || got[0].End != 3000 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSessionSnapshot(t *testing.T) {
+	o := New(Config{Gap: 1000})
+	run(o, event.Event{Key: "a", Value: 5, Time: 100})
+	b, err := o.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o2 := New(Config{Gap: 1000})
+	if err := o2.Restore(b); err != nil {
+		t.Fatal(err)
+	}
+	o2.AdvanceTo(50000)
+	var got []event.Result
+	o2.Advance(func(r event.Result) { got = append(got, r) })
+	if len(got) != 1 || got[0].Sum != 5 {
+		t.Fatalf("got %+v", got)
+	}
+}
