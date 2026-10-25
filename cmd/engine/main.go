@@ -42,6 +42,13 @@ func (c *current) TrySubmit(ctx context.Context, producer string, evs []event.Ev
 	return e.TrySubmit(ctx, producer, evs)
 }
 
+func (c *current) Committed(producer string) uint64 {
+	if e := c.p.Load(); e != nil {
+		return e.Committed(producer)
+	}
+	return 0
+}
+
 func main() {
 	role := flag.String("role", "standalone", "standalone | master | worker")
 	addr := flag.String("addr", ":7070", "grpc listen addr (standalone, master)")
