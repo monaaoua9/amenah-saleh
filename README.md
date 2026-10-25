@@ -8,9 +8,8 @@ A small distributed-style stream processing engine in Go: gRPC ingestion,
 event-time windows with watermarks, credit-based backpressure, and
 Chandy-Lamport style checkpoints with exactly-once results across a crash.
 
-Single process, goroutines instead of machines. The design (lanes, workers,
-sink, barriers) maps onto separate nodes, but the transport between them is
-channels today.
+Runs in one process (goroutines and channels) or with the window workers split
+out into separate processes that talk to a master over gRPC.
 
 Design and the reasoning behind it: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -28,6 +27,18 @@ Useful server flags: `-window`, `-slide` (sliding windows), `-gap` (session wind
 `-disorder`, `-inflight`, `-shed` (reject instead of stall), `-ckevery`, `-ckdir`, `-maxpending`,
 `-metrics :9090` (Prometheus text at /metrics), `-pprof :6060`.
 
+## Cluster demo
+
+```
+dspe -role master -expect 3 -ckdir ./ck      # ingest + coordinator on :7070
+dspe -role worker -master localhost:7070     # run three of these
+loadgen -c 4 -d 20s                          # producers talk to the master
+```
+
+Kill a worker while loadgen runs: the master logs `engine failed ... recovering`,
+producers see `Unavailable`, and once a replacement node connects the engine
+restores from the last checkpoint (producers replay; `Seq` dedup does the rest).
+
 ## What it does
 
 - **Ingestion**: bidirectional gRPC stream, protobuf. A producer is pinned to a
@@ -35,6 +46,11 @@ Useful server flags: `-window`, `-slide` (sliding windows), `-gap` (session wind
 - **Event time**: tumbling, sliding and session windows, bounded out-of-orderness
   watermark, allowed lateness with refire, late events counted and dropped.
   Manual watermark punctuation uses the min across lanes.
+- **Cluster mode**: window workers can run as separate processes. A master owns
+  ingest, lanes, the sink and checkpoints; worker nodes dial in over gRPC, get
+  their state from the master and send results back on the same stream. If a
+  node dies the master notices, waits for a replacement, and restores everyone
+  from the last checkpoint.
 - **Backpressure**: bounded channels plus a cap on total in-flight events.
   Credits return only after the sink accepted the output.
 - **Checkpoints**: numbered barriers, aligned per task, snapshots written
@@ -63,5 +79,7 @@ The latency histogram is log-bucketed, so quantiles are within ~25%.
 
 - A crash between sink emit and its marker re-sends that one epoch, so the
   guarantee for it is at-least-once; downstream dedups on (key, window start).
-- Single node. No networked workers, no leader election.
+- The master is a single point of failure (no leader election), and recovery is
+  a full rollback to the last checkpoint, not a per-worker restart.
+- Worker streams are plaintext gRPC with no auth.
 - Not tested under the race detector yet (needs cgo).
