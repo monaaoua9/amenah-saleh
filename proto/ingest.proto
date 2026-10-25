@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package dspe.v1;
+
+option go_package = "github.com/monaaoua9/amenah-saleh/internal/ingest/pb";
+
+message Event {
+  string key = 1;
+  double value = 2;
+  int64 time = 3; // event time, unix ms
+  uint64 seq = 4; // per producer, starts at 1
+}
+
+message Batch {
+  string producer = 1;
+  repeated Event events = 2;
+}
+
+message Ack {
+  string producer = 1;
+  uint64 last_seq = 2;
+}
+
+service Ingest {
+  rpc Stream(stream Batch) returns (stream Ack);
+}
