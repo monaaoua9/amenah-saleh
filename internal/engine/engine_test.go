@@ -1,0 +1,166 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/window"
+)
+
+type collector struct {
+	mu  sync.Mutex
+	res map[string]event.Result
+	n   int
+}
+
+func newCollector() *collector { return &collector{res: map[string]event.Result{}} }
+
+func (c *collector) add(r event.Result) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.res[fmt.Sprintf("%s@%d", r.Key, r.Start)] = r
+	c.n++
+}
+
+func gen(n int) []event.Event {
+	evs := make([]event.Event, n)
+	for i := range evs {
+		evs[i] = event.Event{Key: fmt.Sprintf("k%d", i%17), Value: float64(i % 5), Time: int64(i) * 10, Seq: uint64(i + 1)}
+	}
+	return evs
+}
+
+func testCfg(dir string, c *collector) Config {
+	return Config{
+		Lanes: 2, Workers: 4, QueueDepth: 8, MaxInflight: 4096,
+		Window:        window.Config{Size: 1000},
+		CheckpointDir: dir,
+		OnResult:      c.add,
+	}
+}
+
+func feed(t *testing.T, e *Engine, evs []event.Event) {
+	t.Helper()
+	ctx := context.Background()
+	for i := 0; i < len(evs); i += 100 {
+		end := min(i+100, len(evs))
+		if err := e.Submit(ctx, "p", evs[i:end]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func finish(t *testing.T, e *Engine) {
+	t.Helper()
+	ctx := context.Background()
+	if err := e.AdvanceWatermark(ctx, 1<<40); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Checkpoint(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExactlyOnceAcrossCrash(t *testing.T) {
+	evs := gen(20000)
+
+	base := newCollector()
+	e := New(testCfg(t.TempDir(), base))
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e, evs)
+	finish(t, e)
+	e.Stop()
+
+	dir := t.TempDir()
+	got := newCollector()
+
+	e1 := New(testCfg(dir, got))
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, evs[:12000])
+	if _, err := e1.Checkpoint(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, evs[12000:15000]) // lost with the crash
+	time.Sleep(50 * time.Millisecond)
+	e1.Stop()
+
+	e2 := New(testCfg(dir, got))
+	if err := e2.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e2, evs) // producer replays everything, dedup eats the prefix
+	finish(t, e2)
+	e2.Stop()
+
+	if got.n != base.n {
+		t.Fatalf("emitted %d results, want %d (dup or loss)", got.n, base.n)
+	}
+	for k, w := range base.res {
+		g, ok := got.res[k]
+		if !ok || g.Count != w.Count || g.Sum != w.Sum {
+			t.Fatalf("window %s: got %+v want %+v", k, g, w)
+		}
+	}
+	if e2.Stats().Dups == 0 {
+		t.Fatal("expected replay to hit dedup")
+	}
+}
+
+func TestTrySubmitOverload(t *testing.T) {
+	c := newCollector()
+	cfg := testCfg(t.TempDir(), c)
+	cfg.MaxInflight = 100
+	e := New(cfg)
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Stop()
+
+	// reserve everything, nothing can drain a batch we never sent
+	if !e.credits.TryAcquire(100) {
+		t.Fatal("couldn't take credits")
+	}
+	err := e.TrySubmit(context.Background(), "p", gen(10))
+	if err != ErrOverloaded {
+		t.Fatalf("got %v, want ErrOverloaded", err)
+	}
+}
+
+func TestStagedOutputSurvivesCrashBeforeEmit(t *testing.T) {
+	dir := t.TempDir()
+	first := newCollector()
+	e1 := New(testCfg(dir, first))
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, gen(5000))
+	finish(t, e1)
+	e1.Stop()
+
+	// pretend we died between _COMPLETE and the emit
+	id, _ := e1.store.Latest()
+	if err := os.Remove(filepath.Join(dir, fmt.Sprintf("chk-%08d", id), "_EMITTED")); err != nil {
+		t.Fatal(err)
+	}
+
+	second := newCollector()
+	e2 := New(testCfg(dir, second))
+	if err := e2.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e2.Stop()
+
+	if second.n != first.n || second.n == 0 {
+		t.Fatalf("replayed %d results, want %d", second.n, first.n)
+	}
+}
