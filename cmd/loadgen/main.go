@@ -35,35 +35,25 @@ func main() {
 		wg.Add(1)
 		go func(p int) {
 			defer wg.Done()
-			c, err := ingest.Dial(context.Background(), *addr, grpcInsecure())
-			if err != nil {
-				log.Print(err)
-				return
-			}
-			defer c.Close()
+			prod := ingest.NewProducer(*addr, fmt.Sprintf("p%d", p), grpcInsecure())
+			defer prod.Close()
 
-			name := fmt.Sprintf("p%d", p)
 			rng := rand.New(rand.NewSource(int64(p)))
-			var seq uint64
 			for ctx.Err() == nil {
 				now := time.Now().UnixMilli()
 				evs := make([]event.Event, *batch)
 				for i := range evs {
-					seq++
 					evs[i] = event.Event{
 						Key:   fmt.Sprintf("k%d", rng.Intn(*keys)),
 						Value: rng.Float64(),
 						Time:  now - rng.Int63n(*jitter+1),
-						Seq:   seq,
 					}
 				}
 				t0 := time.Now()
-				if err := c.Send(name, evs); err != nil {
-					log.Print(err)
-					return
-				}
-				if _, err := c.Recv(); err != nil {
-					log.Print(err)
+				if err := prod.Send(ctx, evs); err != nil {
+					if ctx.Err() == nil {
+						log.Print(err)
+					}
 					return
 				}
 				rtt.Observe(time.Since(t0))
