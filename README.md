@@ -1,5 +1,7 @@
 # AMENAH SALEH
 
+[![ci](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml)
+
 High-throughput distributed stream processing engine. Author: AMENAH SALEH.
 
 A small distributed-style stream processing engine in Go: gRPC ingestion,
