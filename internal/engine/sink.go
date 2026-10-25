@@ -52,6 +52,12 @@ func (s *sink) handle(m sinkMsg) {
 	}
 	if m.barrier == 0 {
 		s.pending = append(s.pending, m.results...)
+		if max := s.e.cfg.MaxPending; max > 0 && len(s.pending) >= max {
+			select {
+			case s.e.ckNow <- struct{}{}:
+			default: // one is already queued
+			}
+		}
 		return
 	}
 	if !s.al.arrive(m.from) {

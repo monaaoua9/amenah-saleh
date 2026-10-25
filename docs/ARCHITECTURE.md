@@ -59,7 +59,9 @@ snapshots when it has seen the barrier from *every* upstream, holding back
 records from upstreams whose barrier already arrived, so channel state is empty
 by construction and nothing needs recording. Snapshots are written
 tmp + fsync + rename; a checkpoint only exists once `_COMPLETE` is written.
-Last 3 are kept. Profile a running server with `-pprof :6060`.
+Last 3 are kept. If staged sink output passes `MaxPending` the sink asks for an
+early checkpoint, which keeps its memory tied to output volume instead of the
+checkpoint interval (a soft limit: results already in flight still land). Profile a running server with `-pprof :6060`.
 
 **Rescaling.** Keys map to one of 128 key groups and a worker owns a range
 of them. A checkpoint records the lane/worker counts; on restore each new

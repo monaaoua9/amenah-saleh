@@ -32,6 +32,7 @@ func main() {
 	disorder := flag.Int64("disorder", 500, "max out-of-orderness, ms")
 	dir := flag.String("ckdir", "./checkpoints", "checkpoint dir")
 	every := flag.Duration("ckevery", 5*time.Second, "checkpoint interval")
+	maxPending := flag.Int("maxpending", 100000, "staged results that trigger an early checkpoint, 0 = off")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -45,7 +46,7 @@ func main() {
 	eng := engine.New(engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
 		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder},
-		CheckpointDir: *dir, CheckpointEvery: *every,
+		CheckpointDir: *dir, CheckpointEvery: *every, MaxPending: *maxPending,
 		OnResult: func(r event.Result) { out.Add(1) },
 	})
 

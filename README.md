@@ -25,7 +25,7 @@ make proto     # regenerate protobuf (needs protoc, protoc-gen-go, protoc-gen-go
 ```
 
 Useful server flags: `-window`, `-slide` (sliding windows), `-gap` (session windows), `-lateness`,
-`-disorder`, `-inflight`, `-shed` (reject instead of stall), `-ckevery`, `-ckdir`,
+`-disorder`, `-inflight`, `-shed` (reject instead of stall), `-ckevery`, `-ckdir`, `-maxpending`,
 `-metrics :9090` (Prometheus text at /metrics), `-pprof :6060`.
 
 ## What it does

@@ -328,3 +328,27 @@ func TestRescaleNeedsKeyedPartitioner(t *testing.T) {
 		t.Fatal("expected error rescaling with a non-keyed partitioner")
 	}
 }
+
+func TestPendingLimitForcesCheckpoint(t *testing.T) {
+	cfg := testCfg(t.TempDir(), newCollector())
+	cfg.MaxPending = 50
+	cfg.CheckpointEvery = time.Hour // only the limit can trigger one
+	e := New(cfg)
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Stop()
+
+	feed(t, e, gen(20000))
+	if err := e.AdvanceWatermark(context.Background(), 1<<40); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for e.Stats().Checkpoints == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no automatic checkpoint despite pending limit")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

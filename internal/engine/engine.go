@@ -34,7 +34,11 @@ type Config struct {
 	Partitioner     partition.Partitioner
 	CheckpointDir   string
 	CheckpointEvery time.Duration // 0 = manual only
-	OnResult        func(event.Result)
+	// Staged-but-uncommitted results above this count make the sink ask for an
+	// early checkpoint. Soft: what arrives before the barrier lands still piles
+	// on top. 0 = no limit.
+	MaxPending int
+	OnResult   func(event.Result)
 }
 
 type Stats struct {
@@ -54,6 +58,7 @@ type Engine struct {
 	store   *checkpoint.Store
 	coord   *checkpoint.Coordinator
 	ckMu    sync.Mutex
+	ckNow   chan struct{}
 
 	lat      metrics.Histogram
 	ingested atomic.Uint64
@@ -81,7 +86,7 @@ func New(cfg Config) *Engine {
 	if cfg.MaxInflight == 0 {
 		cfg.MaxInflight = 1 << 16
 	}
-	return &Engine{cfg: cfg, done: make(chan struct{})}
+	return &Engine{cfg: cfg, done: make(chan struct{}), ckNow: make(chan struct{}, 1)}
 }
 
 func laneTask(i int) string   { return fmt.Sprintf("lane-%d", i) }
@@ -134,7 +139,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	for _, l := range e.lanes {
 		spawn(l.run)
 	}
-	if cfg.CheckpointEvery > 0 {
+	if cfg.CheckpointEvery > 0 || cfg.MaxPending > 0 {
 		spawn(e.checkpointLoop)
 	}
 	return nil
@@ -331,16 +336,21 @@ func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 }
 
 func (e *Engine) checkpointLoop(ctx context.Context) {
-	t := time.NewTicker(e.cfg.CheckpointEvery)
-	defer t.Stop()
+	var tick <-chan time.Time
+	if e.cfg.CheckpointEvery > 0 {
+		t := time.NewTicker(e.cfg.CheckpointEvery)
+		defer t.Stop()
+		tick = t.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			if _, err := e.Checkpoint(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("checkpoint failed: %v", err)
-			}
+		case <-tick:
+		case <-e.ckNow:
+		}
+		if _, err := e.Checkpoint(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("checkpoint failed: %v", err)
 		}
 	}
 }
