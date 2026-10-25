@@ -1,87 +1,132 @@
-# AMENAH SALEH
+# AMENAH SALEH — Distributed Stream Processing Engine
 
 [![ci](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml)
+![go](https://img.shields.io/badge/go-1.27+-00ADD8)
+![license](https://img.shields.io/badge/license-MIT-blue)
 
-High-throughput distributed stream processing engine. Author: AMENAH SALEH.
+A stream processing engine in Go. Events come in over gRPC, get partitioned
+across workers, are aggregated in event-time windows, and come out exactly
+once, even if the process or a worker node dies in the middle.
 
-A small distributed-style stream processing engine in Go: gRPC ingestion,
-event-time windows with watermarks, credit-based backpressure, and
-Chandy-Lamport style checkpoints with exactly-once results across a crash.
-
-Runs in one process (goroutines and channels) or with the window workers split
-out into separate processes that talk to a master over gRPC.
-
-Design and the reasoning behind it: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Run
+It runs either as one process (goroutines and channels) or as a master plus
+separate worker processes. Both modes run the same worker code.
 
 ```
-make test      # unit + crash-recovery + gRPC tests
-make bench     # pipeline / operator benchmarks
-make run       # server on :7070 (-pprof :6060 for profiling)
-make stress    # gRPC load generator against a running server
-make proto     # regenerate protobuf (needs protoc, protoc-gen-go, protoc-gen-go-grpc)
+ producers --gRPC--> ingest --> lanes --hash(key)--> workers --> sink --> results
+                                  |                    |          |
+                                  +---- barriers ------+----------+--> checkpoint store
 ```
 
-Useful server flags: `-window`, `-slide` (sliding windows), `-gap` (session windows), `-lateness`,
-`-disorder`, `-inflight`, `-shed` (reject instead of stall), `-ckevery`, `-ckdir`, `-maxpending`,
-`-metrics :9090` (Prometheus text at /metrics), `-pprof :6060`.
+## What's in it
+
+| | |
+|---|---|
+| **Ingestion** | Bidirectional gRPC streams (protobuf). Each producer is pinned to a lane. Events are routed by `Hash(key)` or `RoundRobin`. |
+| **Event time** | Tumbling, sliding and session windows. Bounded out-of-orderness watermarks, allowed lateness with re-fire, late events counted and dropped. |
+| **Backpressure** | Bounded channels, plus a hard cap on in-flight events across the whole pipeline. Credits return only after the sink has taken the output, so a slow sink slows ingest. `-shed` rejects with `RESOURCE_EXHAUSTED` instead of stalling. |
+| **Checkpoints** | Chandy-Lamport style barriers with per-task alignment. Snapshots are written atomically (tmp, fsync, rename); a checkpoint exists only once its marker file does. |
+| **Exactly-once** | Restore from the last checkpoint, producers replay, lanes drop already-seen `Seq`. Output is staged inside the checkpoint and released only after it is durable. |
+| **Rescaling** | Restore into a different number of lanes and workers. State is split by key group (128 groups, workers own ranges). |
+| **Cluster mode** | Window workers run as separate processes that dial a master. A lost node is detected, a replacement is awaited, everyone is restored from the last checkpoint. |
+| **Observability** | Prometheus text endpoint, `pprof`, a lock-free latency histogram. |
+
+How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Quick start
+
+Needs Go 1.27 or newer.
+
+```
+make test        # unit, crash-recovery, rescale, cluster and gRPC tests
+make run         # standalone server on :7070
+make stress      # in another terminal: gRPC load generator
+make bench       # pipeline and operator benchmarks
+```
+
+Useful flags (`go run ./cmd/engine -h` for all of them):
+
+| flag | meaning |
+|---|---|
+| `-window`, `-slide`, `-gap` | window size; slide for sliding windows; gap in ms for session windows |
+| `-lateness`, `-disorder` | allowed lateness; max out-of-orderness for the watermark |
+| `-workers`, `-lanes` | parallelism (standalone mode) |
+| `-inflight` | cap on events admitted but not yet fully processed |
+| `-shed` | reject instead of stalling when full |
+| `-ckdir`, `-ckevery`, `-maxpending` | checkpoint directory, interval, and the staged-output size that forces an early checkpoint |
+| `-metrics :9090`, `-pprof :6060` | Prometheus text at `/metrics`; profiling |
 
 ## Cluster demo
 
 ```
-dspe -role master -expect 3 -ckdir ./ck      # ingest + coordinator on :7070
-dspe -role worker -master localhost:7070     # run three of these
-loadgen -c 4 -d 20s                          # producers talk to the master
+go run ./cmd/engine -role master -expect 3 -ckdir ./ck    # ingest + coordinator on :7070
+go run ./cmd/engine -role worker -master localhost:7070   # start three of these
+go run ./cmd/loadgen -c 4 -d 20s                          # producers
 ```
 
-Kill a worker while loadgen runs: the master logs `engine failed ... recovering`,
-producers get `Unavailable` and retry on their own, and once a replacement node
-connects the engine restores from the last checkpoint. `ingest.Producer` (used
-by loadgen) replays whatever the last `committed_seq` doesn't cover, and `Seq`
-dedup does the rest, so the run carries on without anyone touching it.
+Kill a worker while the load generator is running. The master logs
+`engine failed ... recovering`, producers get `Unavailable` and retry by
+themselves, and when a replacement node connects the engine restores from the
+last checkpoint. The producer library (`ingest.Producer`) resends whatever the
+last `committed_seq` in an ack doesn't cover, and sequence-number dedup removes
+the overlap, so the run carries on without anyone touching it.
 
-## What it does
+## Guarantees and how they're checked
 
-- **Ingestion**: bidirectional gRPC stream, protobuf. A producer is pinned to a
-  lane; events are routed to workers by `Hash(key)` or `RoundRobin`.
-- **Event time**: tumbling, sliding and session windows, bounded out-of-orderness
-  watermark, allowed lateness with refire, late events counted and dropped.
-  Manual watermark punctuation uses the min across lanes.
-- **Cluster mode**: window workers can run as separate processes. A master owns
-  ingest, lanes, the sink and checkpoints; worker nodes dial in over gRPC, get
-  their state from the master and send results back on the same stream. If a
-  node dies the master notices, waits for a replacement, and restores everyone
-  from the last checkpoint.
-- **Backpressure**: bounded channels plus a cap on total in-flight events.
-  Credits return only after the sink accepted the output.
-- **Checkpoints**: numbered barriers, aligned per task, snapshots written
-  atomically, a checkpoint exists only once its marker file does.
-- **Rescaling**: restore into a different number of lanes and workers. State is
-  split by key group (128 fixed groups, workers own ranges) and producer
-  offsets are re-homed by producer hash. Needs the `Hash` partitioner.
-- **Exactly-once**: restore, producer replays, per-producer `Seq` dedup in the
-  lane, sink output staged inside the checkpoint and released after it is
-  durable.
+These are tests, not claims. Each compares the output with an uninterrupted
+run on the same input.
 
-## Numbers
+- `TestExactlyOnceAcrossCrash`: crash after a checkpoint, restart, replay. Same windows, same counts and sums.
+- `TestStagedOutputSurvivesCrashBeforeEmit`: crash between the checkpoint and the emit; the output is re-sent on restart.
+- `TestRescaleOnRestore`: restore into 7, 2 and 4 workers (with different lane counts).
+- `TestWorkerLossThenRecovery`, `TestRemoteRescale`: real gRPC worker nodes; kill one, recover, or come back with fewer.
+- `TestProducerReplaysAfterServerCrash`: server killed mid-stream and restarted on the same address; the producer reconnects and replays.
+- `TestSubmitBlocksUntilCreditsFree`, `TestTrySubmitOverload`: backpressure.
 
-Laptop, 8 threads, Windows, Go 1.27. These move a lot with machine load, so
-treat them as ranges.
+CI runs everything with `-race` on Linux.
+
+## Performance
+
+One laptop, 8 threads, Windows. Results move a lot with machine load, so read
+these as ranges.
 
 | | |
 |---|---|
-| In-process pipeline (`make bench`, 4 workers) | ~4-5M events/s, ~150 B and 0 allocs per event, batch P99 ~10-17 ms |
+| In-process pipeline, 4 workers (`make bench`) | ~4-5M events/s, ~150 B/event, batch P99 ~10-17 ms |
 | Window operator `Add` | ~130-150 ns/event, 0 allocs |
-| gRPC, 4 clients, batch 500 (`make stress`) | ~0.9M events/s, ack P99 ~4 ms |
+| gRPC, 4 clients, 500 events/batch (`make stress`) | ~0.9M events/s, ack P99 ~4 ms |
+| Cluster, master + 3 worker processes, same machine | ~0.8M events/s |
 
-The latency histogram is log-bucketed, so quantiles are within ~25%.
+The latency histogram is log-bucketed, so quantiles are accurate to ~25%.
+The in-process benchmark number was originally ~1.4M events/s; most of that was
+the benchmark's own key formatting; the commit that fixed it has the details.
 
-## Not done
+## Limits
 
-- A crash between sink emit and its marker re-sends that one epoch, so the
-  guarantee for it is at-least-once; downstream dedups on (key, window start).
-- The master is a single point of failure (no leader election), and recovery is
-  a full rollback to the last checkpoint, not a per-worker restart.
-- Worker streams are plaintext gRPC with no auth.
-- Not tested under the race detector yet (needs cgo).
+- The master is a single point of failure and there is no leader election.
+- Recovery is a full rollback to the last checkpoint, not a per-worker restart.
+- Worker streams are plaintext gRPC without authentication.
+- A crash between the sink emit and its marker re-sends that one epoch:
+  at-least-once for it, and downstream can dedup on (key, window start).
+- After a rescale the watermark restarts at the slowest old worker's, so a very
+  late event may be accepted that an unscaled run would have dropped.
+- Rescaling and cluster mode need the `Hash` partitioner.
+- Session windows have no allowed lateness.
+
+## Layout
+
+```
+cmd/engine          server: standalone | master | worker
+cmd/loadgen         gRPC load generator (uses ingest.Producer)
+internal/engine     lanes, workers, aligned barriers, sink, credits, remote workers
+internal/window     tumbling / sliding / session operator, watermark, snapshots
+internal/checkpoint snapshot store and ack coordinator
+internal/cluster    master-side registry of worker nodes
+internal/ingest     gRPC ingest service, client, reconnecting Producer
+internal/partition  Hash (key groups) and RoundRobin
+internal/metrics    latency histogram
+proto/              wire definitions (make proto regenerates the Go code)
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
