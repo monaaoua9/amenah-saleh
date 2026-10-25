@@ -25,6 +25,10 @@ func BenchmarkPipeline(b *testing.B) {
 			defer e.Stop()
 
 			const bs = 512
+			keys := make([]string, 256)
+			for i := range keys {
+				keys[i] = "k" + fmt.Sprint(i)
+			}
 			ctx := context.Background()
 			b.ResetTimer()
 			start := time.Now()
@@ -33,7 +37,7 @@ func BenchmarkPipeline(b *testing.B) {
 				evs := make([]event.Event, bs)
 				for i := range evs {
 					ts++
-					evs[i] = event.Event{Key: "k" + fmt.Sprint(i%256), Value: 1, Time: ts}
+					evs[i] = event.Event{Key: keys[i%256], Value: 1, Time: ts}
 				}
 				if err := e.Submit(ctx, "bench", evs); err != nil {
 					b.Fatal(err)
