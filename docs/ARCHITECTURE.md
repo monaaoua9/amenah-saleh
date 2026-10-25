@@ -69,6 +69,11 @@ worker loads every old worker snapshot and keeps the keys it now owns, and
 each producer's last `Seq` moves to the lane its hash selects. Requires a
 keyed partitioner (`Hash`); round-robin refuses.
 
+**Producer contract.** Every `Ack` carries `committed_seq`, the highest `Seq`
+of that producer inside a completed checkpoint. `ingest.Producer` numbers
+events, keeps batches above `committed_seq`, and on a broken stream reconnects
+and resends them; the lane's `Seq` dedup drops what the engine already has.
+
 **Exactly-once.** State is restored from the last complete checkpoint, the
 producer replays from any point at or before it, and lanes drop `Seq <= last`
 per producer. Sink output of an uncommitted epoch is discarded on crash and
@@ -109,8 +114,10 @@ that restores from the last checkpoint.
 - `Advance` scans all open windows once per batch; fine up to ~100k open
   windows, after that use a timer heap.
 - Cluster recovery is a full rollback; a surviving worker is restored too.
-- Producers must send contiguous increasing `Seq` and replay from the last
-  acked point; the engine has no source offsets of its own.
+- Exactly-once needs a producer that follows the protocol: contiguous `Seq`, and
+  replay of everything above the ack's `committed_seq`. `ingest.Producer` does
+  this; a hand-rolled client has to. The engine keeps no source offsets beyond
+  the per-producer last `Seq`.
 
 ## Layout
 

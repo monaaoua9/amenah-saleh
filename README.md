@@ -36,8 +36,10 @@ loadgen -c 4 -d 20s                          # producers talk to the master
 ```
 
 Kill a worker while loadgen runs: the master logs `engine failed ... recovering`,
-producers see `Unavailable`, and once a replacement node connects the engine
-restores from the last checkpoint (producers replay; `Seq` dedup does the rest).
+producers get `Unavailable` and retry on their own, and once a replacement node
+connects the engine restores from the last checkpoint. `ingest.Producer` (used
+by loadgen) replays whatever the last `committed_seq` doesn't cover, and `Seq`
+dedup does the rest, so the run carries on without anyone touching it.
 
 ## What it does
 
