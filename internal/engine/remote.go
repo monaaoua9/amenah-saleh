@@ -126,6 +126,10 @@ func (r *remoteWorker) recvLoop(ctx context.Context) {
 			}
 			r.e.coord.Ack(x.Snap.Id, workerTask(r.id), x.Snap.Data, serr)
 		case *cpb.FromWorker_Done:
+			if x.Done.N < 0 || x.Done.N > r.e.cfg.MaxInflight {
+				r.e.fail(fmt.Errorf("worker %d reported bad Done.N=%d", r.id, x.Done.N))
+				return
+			}
 			r.e.release(x.Done.N)
 			r.e.lat.Observe(time.Since(time.Unix(0, x.Done.AtNs)))
 			r.late.Store(x.Done.Late)

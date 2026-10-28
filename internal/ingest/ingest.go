@@ -55,6 +55,8 @@ func (s *Server) Stream(st grpc.BidiStreamingServer[pb.Batch, pb.Ack]) error {
 			err = s.sub.Submit(ctx, b.Producer, evs)
 		}
 		switch {
+		case errors.Is(err, engine.ErrBatchTooLarge):
+			return status.Error(codes.InvalidArgument, err.Error())
 		case errors.Is(err, engine.ErrOverloaded):
 			return status.Error(codes.ResourceExhausted, "overloaded")
 		case err != nil:

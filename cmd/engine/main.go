@@ -61,6 +61,7 @@ func main() {
 	slide := flag.Int64("slide", 0, "slide for sliding windows, ms (0 = tumbling)")
 	gap := flag.Int64("gap", 0, "session gap, ms (> 0 switches to session windows)")
 	lateness := flag.Int64("lateness", 2000, "allowed lateness, ms")
+	maxJump := flag.Int64("maxjump", 0, "drop events further than this many ms ahead of the newest seen, 0 = off")
 	disorder := flag.Int64("disorder", 500, "max out-of-orderness, ms")
 	dir := flag.String("ckdir", "./checkpoints", "checkpoint dir")
 	every := flag.Duration("ckevery", 5*time.Second, "checkpoint interval")
@@ -84,7 +85,7 @@ func main() {
 	var out atomic.Uint64
 	base := engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
-		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder},
+		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder, MaxJump: *maxJump},
 		CheckpointDir: *dir, CheckpointEvery: *every, MaxPending: *maxPending,
 		OnResult: func(r event.Result) { out.Add(1) },
 	}

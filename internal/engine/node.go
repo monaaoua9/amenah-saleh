@@ -40,8 +40,12 @@ func RunWorkerNode(ctx context.Context, master string) error {
 		return errors.New("first message was not Init")
 	}
 
+	wcfg := windowFromWire(init.Window)
+	if err := wcfg.Validate(); err != nil || init.Lanes <= 0 {
+		return fmt.Errorf("bad Init from master: %v", err)
+	}
 	env := &streamEnv{st: st}
-	w := newWorker(int(init.WorkerId), int(init.Lanes), windowFromWire(init.Window), env)
+	w := newWorker(int(init.WorkerId), int(init.Lanes), wcfg, env)
 	env.op = w.op
 
 	if len(init.Snapshots) > 0 {

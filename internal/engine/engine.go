@@ -23,6 +23,8 @@ import (
 var (
 	ErrOverloaded = errors.New("engine overloaded")
 	ErrStopped    = errors.New("engine stopped")
+	// permanent: retrying the same batch can never work
+	ErrBatchTooLarge = errors.New("batch too large")
 )
 
 type Config struct {
@@ -114,7 +116,23 @@ func workerTask(i int) string { return fmt.Sprintf("worker-%d", i) }
 
 // Start restores from the latest complete checkpoint if there is one.
 func (e *Engine) Start(ctx context.Context) error {
+	ctx, e.cancel = context.WithCancel(ctx)
+	e.runCtx = ctx
+	if err := e.start(ctx); err != nil {
+		e.cancel()
+		for _, c := range e.cfg.Remote {
+			c.Close()
+		}
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) start(ctx context.Context) error {
 	cfg := e.cfg
+	if err := cfg.Window.Validate(); err != nil {
+		return err
+	}
 	if cfg.Remote != nil {
 		if _, ok := cfg.Partitioner.(partition.Hash); !ok {
 			return errors.New("remote workers require the Hash partitioner")
@@ -162,8 +180,6 @@ func (e *Engine) Start(ctx context.Context) error {
 		}
 	}
 
-	ctx, e.cancel = context.WithCancel(ctx)
-	e.runCtx = ctx
 	spawn := func(fn func(context.Context)) {
 		e.wg.Add(1)
 		go func() { defer e.wg.Done(); fn(ctx) }()
@@ -329,7 +345,7 @@ func (e *Engine) submit(ctx context.Context, producer string, evs []event.Event,
 		return nil
 	}
 	if n > e.cfg.MaxInflight {
-		return fmt.Errorf("batch of %d exceeds max inflight %d", n, e.cfg.MaxInflight)
+		return fmt.Errorf("%w: %d events, max inflight %d", ErrBatchTooLarge, n, e.cfg.MaxInflight)
 	}
 	if !e.credits.TryAcquire(n) {
 		if !block {
@@ -483,9 +499,9 @@ func (e *Engine) Stats() Stats {
 }
 
 func windowToWire(c window.Config) *cpb.WindowConfig {
-	return &cpb.WindowConfig{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder}
+	return &cpb.WindowConfig{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder, MaxJump: c.MaxJump}
 }
 
 func windowFromWire(c *cpb.WindowConfig) window.Config {
-	return window.Config{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder}
+	return window.Config{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder, MaxJump: c.MaxJump}
 }

@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
 	"github.com/monaaoua9/amenah-saleh/internal/event"
@@ -160,5 +162,39 @@ func TestProducerReplaysAfterServerCrash(t *testing.T) {
 		if !ok || g.Count != w.Count || g.Sum != w.Sum {
 			t.Fatalf("window %s: got %+v want %+v", k, g, w)
 		}
+	}
+}
+
+func TestProducerGivesUpOnPermanentError(t *testing.T) {
+	cfg := engCfg(t.TempDir(), &collector{res: map[string]event.Result{}})
+	cfg.MaxInflight = 100
+	eng := engine.New(cfg)
+	if err := eng.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Stop()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := grpc.NewServer()
+	NewServer(eng, false).Register(g)
+	go g.Serve(lis)
+	defer g.Stop()
+
+	prod := NewProducer(lis.Addr().String(), "p", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	defer prod.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = prod.Send(ctx, make([]event.Event, 500))
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument (and no endless retry)", err)
+	}
+	if prod.Unconfirmed() != 0 {
+		t.Fatal("rejected batch was kept for replay")
+	}
+	if err := prod.Send(ctx, make([]event.Event, 10)); err != nil {
+		t.Fatalf("producer unusable after a rejected batch: %v", err)
 	}
 }

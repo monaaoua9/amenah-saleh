@@ -3,6 +3,7 @@ package window
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"sync/atomic"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
@@ -14,6 +15,28 @@ type Config struct {
 	Gap      int64 // ms of silence that closes a session; > 0 switches to session windows
 	Lateness int64 // ms a fired window is kept around for stragglers
 	Disorder int64 // ms, feeds the watermark
+	MaxJump  int64 // ms, an event further ahead of the watermark base than this is dropped; 0 = unlimited
+}
+
+// anything outside this is a bad clock or a hostile producer; it would also
+// overflow the window arithmetic
+const maxEventTime = int64(1) << 60
+
+func (c Config) Validate() error {
+	switch {
+	case c.Gap < 0 || c.Slide < 0 || c.Lateness < 0 || c.Disorder < 0 || c.MaxJump < 0:
+		return errors.New("window: negative duration")
+	case c.Gap == 0 && c.Size <= 0:
+		return errors.New("window: size must be > 0")
+	}
+	return nil
+}
+
+func (o *Operator) implausible(t int64) bool {
+	if t > maxEventTime || t < -maxEventTime {
+		return true
+	}
+	return o.cfg.MaxJump > 0 && o.wm.Init && t > o.wm.Max+o.cfg.MaxJump
 }
 
 type wkey struct {
@@ -47,6 +70,10 @@ func New(cfg Config) *Operator {
 }
 
 func (o *Operator) Add(e event.Event, emit func(event.Result)) {
+	if o.implausible(e.Time) {
+		o.late.Add(1)
+		return
+	}
 	if o.cfg.Gap > 0 {
 		o.addSession(e)
 		return

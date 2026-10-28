@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 )
@@ -63,8 +65,18 @@ func (p *Producer) Send(ctx context.Context, evs []event.Event) error {
 			p.c, p.sent = c, 0
 		}
 
-		if err := p.pump(); err == nil {
+		err := p.pump()
+		if err == nil {
 			return nil
+		}
+		if status.Code(err) == codes.InvalidArgument {
+			// the server will never take this batch: forget it instead of replaying forever
+			p.buf = p.buf[:len(p.buf)-1]
+			p.seq -= uint64(len(evs))
+			p.sent = min(p.sent, len(p.buf))
+			p.c.Close()
+			p.c = nil
+			return err
 		}
 		p.c.Close()
 		p.c = nil

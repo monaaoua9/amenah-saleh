@@ -108,7 +108,12 @@ run on the same input.
 - `TestProducerReplaysAfterServerCrash`: server killed mid-stream and restarted on the same address; the producer reconnects and replays.
 - `TestSubmitBlocksUntilCreditsFree`, `TestTrySubmitOverload`: backpressure.
 
-CI runs everything with `-race` on Linux.
+CI runs everything with `-race` on Linux. An independent review pass (a fresh
+reviewer with no context, told to find bugs and prove them) found six issues,
+all fixed with a regression test that fails without the fix: a panic when
+`Start` fails, a poisoned watermark from one extreme timestamp, a panic on
+invalid window config, a permanent error that was retried forever, staged sink
+output lost after a failed checkpoint followed by a crash, and missing fsyncs.
 
 ## Performance
 
@@ -137,6 +142,8 @@ the benchmark's own key formatting; the commit that fixed it has the details.
   late event may be accepted that an unscaled run would have dropped.
 - Rescaling and cluster mode need the `Hash` partitioner.
 - Session windows have no allowed lateness.
+- Event times beyond ±2^60 are always dropped; `-maxjump` additionally drops events
+  too far ahead of the newest one so a single bad timestamp cannot freeze a window.
 
 ## Layout
 

@@ -12,6 +12,7 @@ message WindowConfig {
   int64 gap = 3;
   int64 lateness = 4;
   int64 disorder = 5;
+  int64 max_jump = 6;
 }
 
 // First message on every stream. Snapshots are only set when restoring: just

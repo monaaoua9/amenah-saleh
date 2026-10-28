@@ -1,16 +1,24 @@
 package checkpoint
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
-type Store struct{ dir string }
+type Store struct {
+	dir      string
+	failNext atomic.Bool // tests only
+}
 
-func NewStore(dir string) *Store { return &Store{dir} }
+func (s *Store) FailCommitForTest(on bool) { s.failNext.Store(on) }
+
+func NewStore(dir string) *Store { return &Store{dir: dir} }
 
 func (s *Store) path(id uint64) string {
 	return filepath.Join(s.dir, fmt.Sprintf("chk-%08d", id))
@@ -37,7 +45,40 @@ func (s *Store) Put(id uint64, task string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(d, task+".snap"))
+	if err := os.Rename(tmp, filepath.Join(d, task+".snap")); err != nil {
+		return err
+	}
+	syncDir(d)
+	return nil
+}
+
+// marker files: write, fsync, then fsync the directory so the entry survives power loss
+func (s *Store) marker(id uint64, name string) error {
+	d := s.path(id)
+	f, err := os.Create(filepath.Join(d, name))
+	if err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	syncDir(d)
+	return nil
+}
+
+// best effort: not every platform lets you open a directory
+func syncDir(d string) {
+	if runtime.GOOS == "windows" {
+		return // directories cannot be fsynced there
+	}
+	if f, err := os.Open(d); err == nil {
+		f.Sync()
+		f.Close()
+	}
 }
 
 func (s *Store) Get(id uint64, task string) ([]byte, error) {
@@ -46,12 +87,15 @@ func (s *Store) Get(id uint64, task string) ([]byte, error) {
 
 // a checkpoint doesn't exist until this marker does
 func (s *Store) Commit(id uint64) error {
-	return os.WriteFile(filepath.Join(s.path(id), "_COMPLETE"), nil, 0o644)
+	if s.failNext.Load() {
+		return errors.New("injected commit failure")
+	}
+	return s.marker(id, "_COMPLETE")
 }
 
 // set once the sink has handed the epoch's output downstream
 func (s *Store) MarkEmitted(id uint64) error {
-	return os.WriteFile(filepath.Join(s.path(id), "_EMITTED"), nil, 0o644)
+	return s.marker(id, "_EMITTED")
 }
 
 func (s *Store) Emitted(id uint64) bool {

@@ -135,3 +135,41 @@ func TestSessionSnapshot(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestPoisonTimestampDoesNotKillWatermark(t *testing.T) {
+	o := New(Config{Size: 1000})
+	run(o, event.Event{Key: "a", Value: 1, Time: 100})
+	run(o, event.Event{Key: "a", Value: 1, Time: 1<<63 - 1})
+	run(o, event.Event{Key: "a", Value: 1, Time: 200})
+	if o.Late() != 1 {
+		t.Fatalf("late = %d, want only the poison event", o.Late())
+	}
+	o.AdvanceTo(5000)
+	var got []event.Result
+	o.Advance(func(r event.Result) { got = append(got, r) })
+	if len(got) != 1 || got[0].Count != 2 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestMaxJumpDropsFarFutureEvents(t *testing.T) {
+	o := New(Config{Size: 1000, MaxJump: 10000})
+	run(o, event.Event{Key: "a", Value: 1, Time: 100})
+	run(o, event.Event{Key: "a", Value: 1, Time: 1_000_000})
+	if o.Late() != 1 {
+		t.Fatalf("late = %d", o.Late())
+	}
+}
+
+func TestValidate(t *testing.T) {
+	for _, c := range []Config{{}, {Size: -1}, {Size: 10, Slide: -5}, {Size: 10, Lateness: -1}} {
+		if c.Validate() == nil {
+			t.Fatalf("%+v should be invalid", c)
+		}
+	}
+	for _, c := range []Config{{Size: 10}, {Size: 10, Slide: 5}, {Gap: 100}} {
+		if err := c.Validate(); err != nil {
+			t.Fatalf("%+v: %v", c, err)
+		}
+	}
+}

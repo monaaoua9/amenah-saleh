@@ -67,9 +67,16 @@ func (s *sink) handle(m sinkMsg) {
 		return
 	}
 	s.mu.Lock()
+	// an earlier checkpoint may have failed after staging; its output is still
+	// owed, so this snapshot has to carry it too or a crash here loses it
+	all := make([][]event.Result, 0, len(s.pending)+8)
+	for _, st := range s.st {
+		all = append(all, st.res...)
+	}
+	all = append(all, s.pending...)
 	s.st = append(s.st, staged{m.barrier, s.pending})
 	s.mu.Unlock()
-	snap, err := encodeResults(s.pending)
+	snap, err := encodeResults(all)
 	s.pending, s.pendingN = nil, 0
 
 	s.e.coord.Ack(m.barrier, "sink", snap, err)

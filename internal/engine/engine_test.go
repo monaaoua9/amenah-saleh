@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -350,5 +351,104 @@ func TestPendingLimitForcesCheckpoint(t *testing.T) {
 			t.Fatal("no automatic checkpoint despite pending limit")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestStopAfterFailedStartDoesNotPanic(t *testing.T) {
+	dir := t.TempDir()
+	e1 := New(testCfg(dir, newCollector()))
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, gen(500))
+	if _, err := e1.Checkpoint(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e1.Stop()
+
+	cfg := testCfg(dir, newCollector())
+	cfg.Workers = 2
+	cfg.Partitioner = &partition.RoundRobin{} // rescale refuses this, so Start fails
+	e2 := New(cfg)
+	if err := e2.Start(context.Background()); err == nil {
+		t.Fatal("expected Start to fail")
+	}
+	e2.Stop()
+
+	bad := testCfg(t.TempDir(), newCollector())
+	bad.Window.Size = 0
+	e3 := New(bad)
+	if err := e3.Start(context.Background()); err == nil {
+		t.Fatal("expected invalid window config to be rejected")
+	}
+	e3.Stop()
+}
+
+func TestOversizedBatchIsPermanentError(t *testing.T) {
+	cfg := testCfg(t.TempDir(), newCollector())
+	cfg.MaxInflight = 50
+	e := New(cfg)
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Stop()
+	err := e.Submit(context.Background(), "p", gen(60))
+	if !errors.Is(err, ErrBatchTooLarge) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// A checkpoint that fails after the sink staged its output must not make that
+// output unreachable: the next snapshot has to carry it. Output e1 emits dies
+// with it (separate collector), so only the restore path can supply it.
+func TestFailedCheckpointOutputSurvivesNextOne(t *testing.T) {
+	dir := t.TempDir()
+	evs := gen(6000)
+
+	base := newCollector()
+	eb := New(testCfg(t.TempDir(), base))
+	if err := eb.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, eb, evs)
+	finish(t, eb)
+	eb.Stop()
+
+	e1 := New(testCfg(dir, newCollector()))
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, evs)
+	if err := e1.AdvanceWatermark(context.Background(), 1<<40); err != nil {
+		t.Fatal(err)
+	}
+
+	// fails after the barrier, when the sink has already staged this epoch
+	e1.store.FailCommitForTest(true)
+	if _, err := e1.Checkpoint(context.Background()); err == nil {
+		t.Fatal("expected the injected failure")
+	}
+	e1.store.FailCommitForTest(false)
+	if _, err := e1.Checkpoint(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := e1.store.Latest()
+	e1.Stop()
+	os.Remove(filepath.Join(dir, fmt.Sprintf("chk-%08d", id), "_EMITTED"))
+
+	got := newCollector()
+	e2 := New(testCfg(dir, got))
+	if err := e2.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e2.Stop()
+
+	if got.n != base.n {
+		t.Fatalf("recovered %d results, want %d", got.n, base.n)
+	}
+	for k, w := range base.res {
+		if g, ok := got.res[k]; !ok || g.Count != w.Count {
+			t.Fatalf("window %s lost or wrong: %+v want %+v", k, g, w)
+		}
 	}
 }
