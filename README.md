@@ -1,6 +1,6 @@
 # AMENAH SALEH — Distributed Stream Processing Engine
 
-[![ci](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml)
+[![ci](https://github.com/monaaoua9/streamdb/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/streamdb/actions/workflows/ci.yml)
 ![go](https://img.shields.io/badge/go-1.27+-00ADD8)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
