@@ -123,7 +123,7 @@ these as ranges.
 | | |
 |---|---|
 | In-process pipeline, 4 workers (`make bench`) | ~4-5M events/s, ~150 B/event, batch P99 ~10-17 ms |
-| Window operator `Add` | ~130-150 ns/event, 0 allocs |
+| Window operator `Add` | ~80 ns/event, 0 allocs |
 | gRPC, 4 clients, 500 events/batch (`make stress`) | ~0.9M events/s, ack P99 ~4 ms |
 | Cluster, master + 3 worker processes, same machine | ~0.8M events/s |
 
