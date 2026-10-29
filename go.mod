@@ -1,4 +1,4 @@
-module github.com/monaaoua9/amenah-saleh
+module github.com/monaaoua9/streamdb
 
 go 1.27.0
 

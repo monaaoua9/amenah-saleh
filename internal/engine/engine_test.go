@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/partition"
-	"github.com/monaaoua9/amenah-saleh/internal/window"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/partition"
+	"github.com/monaaoua9/streamdb/internal/window"
 )
 
 type collector struct {

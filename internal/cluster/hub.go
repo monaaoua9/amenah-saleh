@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
-	"github.com/monaaoua9/amenah-saleh/internal/engine"
+	"github.com/monaaoua9/streamdb/internal/cluster/pb"
+	"github.com/monaaoua9/streamdb/internal/engine"
 )
 
 // Hub is the master's registry of worker nodes. A node registers by opening

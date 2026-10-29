@@ -20,4 +20,4 @@ stress:
 	go run ./cmd/loadgen -d 10s -c 4
 
 proto:
-	protoc -I. --go_out=. --go_opt=module=github.com/monaaoua9/amenah-saleh --go-grpc_out=. --go-grpc_opt=module=github.com/monaaoua9/amenah-saleh proto/ingest.proto proto/cluster.proto
+	protoc -I. --go_out=. --go_opt=module=github.com/monaaoua9/streamdb --go-grpc_out=. --go-grpc_opt=module=github.com/monaaoua9/streamdb proto/ingest.proto proto/cluster.proto

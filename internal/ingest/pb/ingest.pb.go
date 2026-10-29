@@ -221,7 +221,7 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\blast_seq\x18\x02 \x01(\x04R\alastSeq\x12#\n" +
 	"\rcommitted_seq\x18\x03 \x01(\x04R\fcommittedSeq24\n" +
 	"\x06Ingest\x12*\n" +
-	"\x06Stream\x12\x0e.dspe.v1.Batch\x1a\f.dspe.v1.Ack(\x010\x01B6Z4github.com/monaaoua9/amenah-saleh/internal/ingest/pbb\x06proto3"
+	"\x06Stream\x12\x0e.dspe.v1.Batch\x1a\f.dspe.v1.Ack(\x010\x01B2Z0github.com/monaaoua9/streamdb/internal/ingest/pbb\x06proto3"
 
 var (
 	file_proto_ingest_proto_rawDescOnce sync.Once

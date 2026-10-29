@@ -9,9 +9,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	cpb "github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/partition"
+	cpb "github.com/monaaoua9/streamdb/internal/cluster/pb"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/partition"
 )
 
 // RunWorkerNode connects to a master and runs one worker until the stream

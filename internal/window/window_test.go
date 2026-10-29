@@ -3,7 +3,7 @@ package window
 import (
 	"testing"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 func run(o *Operator, evs ...event.Event) (out []event.Result) {

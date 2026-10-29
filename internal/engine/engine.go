@@ -12,12 +12,12 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/monaaoua9/amenah-saleh/internal/checkpoint"
-	cpb "github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/metrics"
-	"github.com/monaaoua9/amenah-saleh/internal/partition"
-	"github.com/monaaoua9/amenah-saleh/internal/window"
+	"github.com/monaaoua9/streamdb/internal/checkpoint"
+	cpb "github.com/monaaoua9/streamdb/internal/cluster/pb"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/metrics"
+	"github.com/monaaoua9/streamdb/internal/partition"
+	"github.com/monaaoua9/streamdb/internal/window"
 )
 
 var (

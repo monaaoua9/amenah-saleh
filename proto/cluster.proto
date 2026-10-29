@@ -4,7 +4,7 @@ package dspe.v1;
 
 import "proto/ingest.proto";
 
-option go_package = "github.com/monaaoua9/amenah-saleh/internal/cluster/pb";
+option go_package = "github.com/monaaoua9/streamdb/internal/cluster/pb";
 
 message WindowConfig {
   int64 size = 1;

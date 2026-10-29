@@ -1,6 +1,6 @@
 package window
 
-import "github.com/monaaoua9/amenah-saleh/internal/event"
+import "github.com/monaaoua9/streamdb/internal/event"
 
 type session struct {
 	Start, End int64 // End = last event + gap
