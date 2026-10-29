@@ -30,7 +30,7 @@ separate worker processes. Both modes run the same worker code.
 | **Cluster mode** | Window workers run as separate processes that dial a master. A lost node is detected, a replacement is awaited, everyone is restored from the last checkpoint. |
 | **Observability** | Prometheus text endpoint, `pprof`, a lock-free latency histogram. |
 
-How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The decisions and trade-offs in short: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Quick start
 
