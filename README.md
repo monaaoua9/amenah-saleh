@@ -127,7 +127,7 @@ these as ranges.
 | gRPC, 4 clients, 500 events/batch (`make stress`) | ~1.3M events/s, ack P99 ~3 ms |
 | Cluster, master + 3 worker processes, same machine | ~0.8M events/s |
 
-The latency histogram is log-bucketed, so quantiles are accurate to ~25%.
+The latency histogram is log-bucketed, so quantiles are accurate to ~25%. Three-run medians and ranges are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 The in-process benchmark number was originally ~1.4M events/s; most of that was
 the benchmark's own key formatting; the commit that fixed it has the details.
 
