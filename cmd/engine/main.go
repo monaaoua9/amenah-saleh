@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/monaaoua9/amenah-saleh/internal/api"
 	"github.com/monaaoua9/amenah-saleh/internal/cluster"
 	"github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
@@ -43,6 +44,8 @@ func (c *current) TrySubmit(ctx context.Context, producer string, evs []event.Ev
 	return e.TrySubmit(ctx, producer, evs)
 }
 
+func (c *current) Engine() *engine.Engine { return c.p.Load() }
+
 func (c *current) Committed(producer string) uint64 {
 	if e := c.p.Load(); e != nil {
 		return e.Committed(producer)
@@ -70,6 +73,7 @@ func main() {
 	outPath := flag.String("out", "", "append results as JSON lines to this file")
 	outMax := flag.Int64("outmax", 64<<20, "roll the -out file after this many bytes, 0 = never")
 	webhook := flag.String("webhook", "", "POST result batches to this url")
+	httpAddr := flag.String("http", "", "http api (/results, /stats, /healthz, /readyz, /metrics), off when empty")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -88,6 +92,8 @@ func main() {
 
 	var out atomic.Uint64
 	sinks := []output.Sink{output.Func(func(event.Result) { out.Add(1) })}
+	recent := api.NewRecent(10000)
+	sinks = append(sinks, recent)
 	if *outPath != "" {
 		f, err := output.NewFile(*outPath, *outMax)
 		if err != nil {
@@ -132,6 +138,10 @@ func main() {
 			}
 		})
 		go http.ListenAndServe(*metricsAddr, mux)
+	}
+
+	if *httpAddr != "" {
+		go http.ListenAndServe(*httpAddr, api.Handler(cur, recent))
 	}
 
 	for ctx.Err() == nil {
