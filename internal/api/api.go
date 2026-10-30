@@ -70,6 +70,39 @@ func Handler(src Source, recent *Recent) http.Handler {
 		}
 	})
 
+	mux.HandleFunc("/top", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		by := q.Get("by")
+		if by == "" {
+			by = "sum"
+		}
+		n := 10
+		if v := q.Get("n"); v != "" {
+			x, err := strconv.Atoi(v)
+			if err != nil || x <= 0 {
+				http.Error(w, "bad n", http.StatusBadRequest)
+				return
+			}
+			n = min(x, 1000)
+		}
+		rk, ok := recent.Top(by, n)
+		if !ok {
+			http.Error(w, "unknown metric", http.StatusBadRequest)
+			return
+		}
+		type row struct {
+			Key   string  `json:"key"`
+			Value float64 `json:"value"`
+			Start int64   `json:"start"`
+			End   int64   `json:"end"`
+		}
+		out := make([]row, len(rk))
+		for i, x := range rk {
+			out[i] = row{x.Result.Key, x.Value, x.Result.Start, x.Result.End}
+		}
+		writeJSON(w, map[string]any{"data": out, "meta": map[string]any{"by": by, "count": len(out)}})
+	})
+
 	mux.HandleFunc("/results", func(w http.ResponseWriter, r *http.Request) {
 		limit := 100
 		if v := r.URL.Query().Get("limit"); v != "" {

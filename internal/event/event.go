@@ -41,3 +41,22 @@ func (r Result) StdDev() float64 {
 	}
 	return math.Sqrt(v)
 }
+
+// Metric picks one of count, sum, min, max, avg, stddev by name.
+func (r Result) Metric(name string) (float64, bool) {
+	switch name {
+	case "count":
+		return float64(r.Count), true
+	case "sum":
+		return r.Sum, true
+	case "min":
+		return r.Min, true
+	case "max":
+		return r.Max, true
+	case "avg":
+		return r.Avg(), true
+	case "stddev":
+		return r.StdDev(), true
+	}
+	return 0, false
+}

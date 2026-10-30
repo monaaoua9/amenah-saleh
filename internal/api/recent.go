@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
@@ -43,4 +44,45 @@ func (r *Recent) Query(key string, limit int) []event.Result {
 		}
 	}
 	return out
+}
+
+type Ranked struct {
+	Result event.Result
+	Value  float64
+}
+
+// Top ranks keys by the metric of their newest window in the ring. ok is false
+// for an unknown metric name.
+func (r *Recent) Top(metric string, n int) (out []Ranked, ok bool) {
+	if _, ok := (event.Result{}).Metric(metric); !ok {
+		return nil, false
+	}
+	r.mu.RLock()
+	size := r.next
+	if r.full {
+		size = len(r.buf)
+	}
+	newest := map[string]event.Result{}
+	for i := 1; i <= size; i++ { // newest first, so the first sighting of a key wins
+		x := r.buf[(r.next-i+len(r.buf))%len(r.buf)]
+		if _, seen := newest[x.Key]; !seen {
+			newest[x.Key] = x
+		}
+	}
+	r.mu.RUnlock()
+
+	for _, x := range newest {
+		v, _ := x.Metric(metric)
+		out = append(out, Ranked{x, v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Value != out[j].Value {
+			return out[i].Value > out[j].Value
+		}
+		return out[i].Result.Key < out[j].Result.Key
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out, true
 }

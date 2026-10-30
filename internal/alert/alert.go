@@ -32,8 +32,8 @@ func ParseRule(s string) (Rule, error) {
 		return Rule{}, fmt.Errorf("alert: want \"<metric> <op> <number> [key=<substr>]\", got %q", s)
 	}
 	r := Rule{Text: s, metric: f[0], op: f[1]}
-	if _, err := metricOf(r.metric, event.Result{}); err != nil {
-		return Rule{}, err
+	if _, ok := (event.Result{}).Metric(r.metric); !ok {
+		return Rule{}, fmt.Errorf("alert: unknown metric %q", r.metric)
 	}
 	switch r.op {
 	case ">", ">=", "<", "<=", "==", "!=":
@@ -55,29 +55,11 @@ func ParseRule(s string) (Rule, error) {
 	return r, nil
 }
 
-func metricOf(name string, r event.Result) (float64, error) {
-	switch name {
-	case "count":
-		return float64(r.Count), nil
-	case "sum":
-		return r.Sum, nil
-	case "min":
-		return r.Min, nil
-	case "max":
-		return r.Max, nil
-	case "avg":
-		return r.Avg(), nil
-	case "stddev":
-		return r.StdDev(), nil
-	}
-	return 0, fmt.Errorf("alert: unknown metric %q", name)
-}
-
 func (r Rule) match(res event.Result) (float64, bool) {
 	if r.key != "" && !strings.Contains(res.Key, r.key) {
 		return 0, false
 	}
-	v, _ := metricOf(r.metric, res)
+	v, _ := res.Metric(r.metric)
 	var hit bool
 	switch r.op {
 	case ">":
