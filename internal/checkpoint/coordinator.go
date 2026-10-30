@@ -2,6 +2,7 @@ package checkpoint
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -56,10 +57,17 @@ func (c *Coordinator) Wait(ctx context.Context, id uint64) error {
 	c.mu.Lock()
 	r := c.rounds[id]
 	c.mu.Unlock()
+	if r == nil {
+		return fmt.Errorf("checkpoint %d is not in flight", id)
+	}
 
 	select {
 	case <-r.done:
 	case <-ctx.Done():
+		// forget it, otherwise an abandoned round stays in the map for good
+		c.mu.Lock()
+		delete(c.rounds, id)
+		c.mu.Unlock()
 		return ctx.Err()
 	}
 	c.mu.Lock()
