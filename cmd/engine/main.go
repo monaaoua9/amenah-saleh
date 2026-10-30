@@ -19,6 +19,7 @@ import (
 	"github.com/monaaoua9/amenah-saleh/internal/api"
 	"github.com/monaaoua9/amenah-saleh/internal/cluster"
 	"github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
+	"github.com/monaaoua9/amenah-saleh/internal/config"
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/filter"
@@ -90,7 +91,13 @@ func main() {
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
+	cfgPath := flag.String("config", "", "json file of flag values; command line flags win")
 	flag.Parse()
+	if *cfgPath != "" {
+		if err := config.Load(flag.CommandLine, *cfgPath); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	if *pprofAddr != "" {
 		go http.ListenAndServe(*pprofAddr, nil)
