@@ -61,20 +61,24 @@ func (l *lane) run(ctx context.Context) {
 func (l *lane) route(ctx context.Context, m laneMsg, parts []*[]event.Event) {
 	nw := len(parts)
 	dups := 0
+	last := l.last[m.producer] // once per batch, not twice per event
 	for i := range m.events {
 		ev := &m.events[i]
 		if ev.Seq != 0 {
-			if ev.Seq <= l.last[m.producer] {
+			if ev.Seq <= last {
 				dups++
 				continue
 			}
-			l.last[m.producer] = ev.Seq
+			last = ev.Seq
 		}
 		w := l.e.cfg.Partitioner.Pick(ev.Key, nw)
 		if parts[w] == nil {
 			parts[w] = getBatch()
 		}
 		*parts[w] = append(*parts[w], *ev)
+	}
+	if last != 0 {
+		l.last[m.producer] = last
 	}
 	if dups > 0 {
 		l.e.dups.Add(uint64(dups))
