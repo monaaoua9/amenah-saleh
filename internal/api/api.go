@@ -34,7 +34,8 @@ type statsView struct {
 	P99Ms       float64 `json:"p99_ms"`
 }
 
-func Handler(src Source, recent *Recent) http.Handler {
+// extras append more Prometheus text to /metrics (ingest, outputs).
+func Handler(src Source, recent *Recent, extras ...func(io.Writer)) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -67,6 +68,9 @@ func Handler(src Source, recent *Recent) http.Handler {
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
 		if e := src.Engine(); e != nil {
 			e.WriteMetrics(w)
+		}
+		for _, f := range extras {
+			f(w)
 		}
 	})
 

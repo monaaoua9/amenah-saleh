@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -130,4 +131,19 @@ func TestFileFlushesWithoutClose(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("result never reached the file")
+}
+
+func TestWebhookMetrics(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	w := NewWebhook(srv.URL, 10, time.Hour)
+	for i := 0; i < 4; i++ {
+		w.Write(event.Result{Key: "k"})
+	}
+	w.Close()
+	var b strings.Builder
+	w.WriteMetrics(&b)
+	if !strings.Contains(b.String(), "dspe_webhook_results_sent_total 4") || !strings.Contains(b.String(), "dspe_webhook_queued 0") {
+		t.Fatal(b.String())
+	}
 }

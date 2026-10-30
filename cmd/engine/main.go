@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -163,10 +164,12 @@ func main() {
 			log.Print("-latefile has no effect in master mode: remote workers do not report late events")
 		}
 	}
+	var extras []func(io.Writer)
 	if *webhook != "" {
 		wh := output.NewWebhook(*webhook, 500, time.Second)
 		defer wh.Close()
 		sinks = append(sinks, wh)
+		extras = append(extras, wh.WriteMetrics)
 	}
 	base := engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
@@ -183,6 +186,7 @@ func main() {
 	}
 	g := grpc.NewServer(append(secOpts, grpc.MaxRecvMsgSize(engine.MaxMsgSize), grpc.MaxSendMsgSize(engine.MaxMsgSize))...)
 	is := ingest.NewServer(cur, *shed)
+	extras = append(extras, is.WriteMetrics)
 	if *filterSrc != "" {
 		f, err := filter.Parse(*filterSrc)
 		if err != nil {
@@ -213,12 +217,15 @@ func main() {
 			if e := cur.p.Load(); e != nil {
 				e.WriteMetrics(w)
 			}
+			for _, f := range extras {
+				f(w)
+			}
 		})
 		go http.ListenAndServe(*metricsAddr, mux)
 	}
 
 	if *httpAddr != "" {
-		go http.ListenAndServe(*httpAddr, api.Handler(cur, recent))
+		go http.ListenAndServe(*httpAddr, api.Handler(cur, recent, extras...))
 	}
 
 	for ctx.Err() == nil {

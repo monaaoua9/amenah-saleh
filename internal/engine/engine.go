@@ -56,6 +56,7 @@ type Stats struct {
 	Ingested, Dups, Late, Emitted, Checkpoints uint64
 	Inflight                                   int64
 	LastCheckpoint                             time.Duration
+	LastCheckpointBytes                        int64
 	P50, P99                                   time.Duration
 }
 
@@ -86,6 +87,7 @@ type Engine struct {
 	inflight atomic.Int64
 	ckCount  atomic.Uint64
 	ckLastNs atomic.Int64
+	ckBytes  atomic.Int64
 
 	done     chan struct{}
 	runCtx   context.Context
@@ -434,6 +436,7 @@ func (e *Engine) Checkpoint(ctx context.Context) (uint64, error) {
 	e.store.Prune(3)
 	e.ckCount.Add(1)
 	e.ckLastNs.Store(int64(time.Since(t0)))
+	e.ckBytes.Store(e.store.Size(id))
 	return id, nil
 }
 
@@ -485,14 +488,15 @@ func (e *Engine) checkpointLoop(ctx context.Context) {
 
 func (e *Engine) Stats() Stats {
 	s := Stats{
-		Ingested:       e.ingested.Load(),
-		Dups:           e.dups.Load(),
-		Emitted:        e.emitted.Load(),
-		Inflight:       e.inflight.Load(),
-		Checkpoints:    e.ckCount.Load(),
-		LastCheckpoint: time.Duration(e.ckLastNs.Load()),
-		P50:            e.lat.Quantile(0.50),
-		P99:            e.lat.Quantile(0.99),
+		Ingested:            e.ingested.Load(),
+		Dups:                e.dups.Load(),
+		Emitted:             e.emitted.Load(),
+		Inflight:            e.inflight.Load(),
+		Checkpoints:         e.ckCount.Load(),
+		LastCheckpoint:      time.Duration(e.ckLastNs.Load()),
+		LastCheckpointBytes: e.ckBytes.Load(),
+		P50:                 e.lat.Quantile(0.50),
+		P99:                 e.lat.Quantile(0.99),
 	}
 	for _, w := range e.workers {
 		if w.op != nil {

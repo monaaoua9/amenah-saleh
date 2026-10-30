@@ -168,3 +168,15 @@ func (s *Store) complete() []uint64 {
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
 }
+
+// Size is the bytes on disk for one checkpoint (compressed size if gzip is on).
+func (s *Store) Size(id uint64) int64 {
+	ents, _ := os.ReadDir(s.path(id))
+	var n int64
+	for _, e := range ents {
+		if info, err := e.Info(); err == nil {
+			n += info.Size()
+		}
+	}
+	return n
+}

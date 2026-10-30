@@ -22,6 +22,7 @@ func (e *Engine) WriteMetrics(w io.Writer) {
 	counter("dspe_checkpoints_total", "Completed checkpoints.", s.Checkpoints)
 	gauge("dspe_inflight_events", "Events admitted but not yet fully processed.", float64(s.Inflight))
 	gauge("dspe_checkpoint_last_seconds", "Duration of the last checkpoint.", s.LastCheckpoint.Seconds())
+	gauge("dspe_checkpoint_last_bytes", "Size on disk of the last checkpoint.", float64(s.LastCheckpointBytes))
 
 	fmt.Fprintf(w, "# HELP dspe_batch_latency_seconds Submit to worker-done latency per batch.\n# TYPE dspe_batch_latency_seconds summary\n")
 	fmt.Fprintf(w, "dspe_batch_latency_seconds{quantile=\"0.5\"} %g\n", s.P50.Seconds())

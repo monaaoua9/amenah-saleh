@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/metrics"
 )
 
 // Batches results and POSTs them as a JSON array. 5xx and network errors are
@@ -28,6 +30,7 @@ type Webhook struct {
 	done  chan struct{}
 	wg    sync.WaitGroup
 	fails int
+	sent  int
 }
 
 func NewWebhook(url string, batch int, every time.Duration) *Webhook {
@@ -85,6 +88,10 @@ func (w *Webhook) flush() {
 			w.fails++
 			w.mu.Unlock()
 			log.Printf("webhook: dropped %d results: %v", n, err)
+		} else {
+			w.mu.Lock()
+			w.sent += n
+			w.mu.Unlock()
 		}
 	}
 }
@@ -124,6 +131,15 @@ func (w *Webhook) post(batch []event.Result) error {
 		last = fmt.Errorf("status %d", resp.StatusCode)
 	}
 	return last
+}
+
+func (w *Webhook) WriteMetrics(out io.Writer) {
+	w.mu.Lock()
+	sent, failed, queued := w.sent, w.fails, len(w.buf)
+	w.mu.Unlock()
+	metrics.Write(out, "dspe_webhook_results_sent_total", "Results delivered to the webhook.", "counter", float64(sent))
+	metrics.Write(out, "dspe_webhook_batches_failed_total", "Batches given up on.", "counter", float64(failed))
+	metrics.Write(out, "dspe_webhook_queued", "Results waiting to be sent.", "gauge", float64(queued))
 }
 
 // Failed is the number of batches given up on so far.

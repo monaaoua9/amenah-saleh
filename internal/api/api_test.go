@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
@@ -117,5 +119,15 @@ func TestTopByPercentile(t *testing.T) {
 	got, ok := r.Top("p99", 1)
 	if !ok || got[0].Result.Key != "b" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestMetricsAppendsExtras(t *testing.T) {
+	// no engine, so only the extras show up
+	h := Handler(noEngine{}, NewRecent(1), func(w io.Writer) { io.WriteString(w, "extra_metric 1\n") })
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), "extra_metric 1") {
+		t.Fatalf("%q", rec.Body)
 	}
 }

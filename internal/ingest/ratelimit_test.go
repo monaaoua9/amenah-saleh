@@ -1,8 +1,10 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,5 +90,38 @@ func TestRateLimitShedRejects(t *testing.T) {
 	err := roundTrip(c, 100)
 	if status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestThrottleAndFilterMetrics(t *testing.T) {
+	f := &fake{}
+	lis, _ := net.Listen("tcp", "127.0.0.1:0")
+	g := grpc.NewServer()
+	srv := NewServer(f, true).WithRate(10, 5).WithFilter(func(e event.Event) bool { return e.Value >= 0 })
+	srv.Register(g)
+	go g.Serve(lis)
+	t.Cleanup(g.Stop)
+	c, err := Dial(context.Background(), lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	c.Send("p", []event.Event{{Key: "a", Value: -1, Seq: 1}, {Key: "b", Value: 1, Seq: 2}})
+	if _, err := c.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	c.Send("p", []event.Event{{Key: "c", Value: 1, Seq: 3}, {Key: "d", Value: 1, Seq: 4}, {Key: "e", Value: 1, Seq: 5}, {Key: "f", Value: 1, Seq: 6}, {Key: "g", Value: 1, Seq: 7}})
+	if _, err := c.Recv(); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("got %v", err)
+	}
+
+	var buf bytes.Buffer
+	srv.WriteMetrics(&buf)
+	out := buf.String()
+	for _, want := range []string{"dspe_ingest_filtered_total 1", "dspe_ingest_throttled_total 1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
 	}
 }

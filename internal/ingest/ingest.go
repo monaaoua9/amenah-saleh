@@ -14,6 +14,7 @@ import (
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/ingest/pb"
+	"github.com/monaaoua9/amenah-saleh/internal/metrics"
 )
 
 type Submitter interface {
@@ -26,10 +27,11 @@ type Server struct {
 	pb.UnimplementedIngestServer
 	sub Submitter
 	// shed = reject with RESOURCE_EXHAUSTED when full instead of stalling the stream
-	shed bool
-	lim  *limiter
-	filt func(event.Event) bool
-	drop atomic.Uint64
+	shed      bool
+	lim       *limiter
+	filt      func(event.Event) bool
+	drop      atomic.Uint64
+	throttled atomic.Uint64 // batches the rate limiter delayed or rejected
 }
 
 func NewServer(sub Submitter, shed bool) *Server { return &Server{sub: sub, shed: shed} }
@@ -49,6 +51,14 @@ func (s *Server) WithFilter(f func(event.Event) bool) *Server {
 }
 
 func (s *Server) Filtered() uint64 { return s.drop.Load() }
+
+func (s *Server) Throttled() uint64 { return s.throttled.Load() }
+
+// Prometheus text, appended to the engine's on /metrics.
+func (s *Server) WriteMetrics(w io.Writer) {
+	metrics.Write(w, "dspe_ingest_filtered_total", "Events dropped by the ingest filter.", "counter", float64(s.Filtered()))
+	metrics.Write(w, "dspe_ingest_throttled_total", "Batches delayed or rejected by the rate limiter.", "counter", float64(s.Throttled()))
+}
 
 func (s *Server) Register(g *grpc.Server) { pb.RegisterIngestServer(g, s) }
 
@@ -86,6 +96,7 @@ func (s *Server) Stream(st grpc.BidiStreamingServer[pb.Batch, pb.Ack]) error {
 		if s.lim != nil {
 			bk := s.lim.bucket(b.Producer)
 			if wait := bk.take(len(evs)); wait > 0 {
+				s.throttled.Add(1)
 				if s.shed {
 					bk.refund(len(evs))
 					return status.Error(codes.ResourceExhausted, "rate limit")

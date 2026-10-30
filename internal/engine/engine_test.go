@@ -213,6 +213,7 @@ func TestMetricsOutput(t *testing.T) {
 		"dspe_inflight_events 0",
 		"dspe_checkpoints_total 1",
 		`dspe_batch_latency_seconds{quantile="0.99"}`,
+		"dspe_checkpoint_last_bytes",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in output: %s", want, out)
@@ -530,5 +531,19 @@ func TestOnLateReceivesDroppedEvents(t *testing.T) {
 	}
 	if e.Stats().Late != 1 {
 		t.Fatalf("stat %d", e.Stats().Late)
+	}
+}
+
+func TestCheckpointBytesReported(t *testing.T) {
+	c := newCollector()
+	e := New(testCfg(t.TempDir(), c))
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer e.Stop()
+	feed(t, e, gen(500))
+	finish(t, e)
+	if e.Stats().LastCheckpointBytes <= 0 {
+		t.Fatal("size not recorded")
 	}
 }
