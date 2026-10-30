@@ -335,3 +335,16 @@ func TestDistinctSurvivesSnapshotAndSessionMerge(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+func TestWindowStartForNegativeAndEdgeTimes(t *testing.T) {
+	for _, tc := range []struct{ time, size, start int64 }{
+		{0, 1000, 0}, {999, 1000, 0}, {1000, 1000, 1000}, {-1, 1000, -1000}, {-1000, 1000, -1000}, {-1001, 1000, -2000},
+	} {
+		op := New(Config{Size: tc.size, Lateness: 1 << 40})
+		op.Add(event.Event{Key: "k", Value: 1, Time: tc.time}, nil)
+		r := fire(op, 1<<50)
+		if len(r) != 1 || r[0].Start != tc.start {
+			t.Errorf("t=%d: got %+v, want start %d", tc.time, r, tc.start)
+		}
+	}
+}

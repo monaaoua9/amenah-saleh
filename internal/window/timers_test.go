@@ -149,3 +149,21 @@ func benchAdvance(b *testing.B, adv func(*Operator, func(event.Result))) {
 func BenchmarkAdvanceHeap200kOpen(b *testing.B) {
 	benchAdvance(b, func(o *Operator, e func(event.Result)) { o.Advance(e) })
 }
+
+// shaped like the engine benchmark: 256 keys, time always moving, Advance per batch
+func BenchmarkAddAdvance(b *testing.B) {
+	op := New(Config{Size: 1000, Disorder: 200})
+	keys := make([]string, 256)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("k%d", i)
+	}
+	emit := func(event.Result) {}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		op.Add(event.Event{Key: keys[i&255], Value: 1, Time: int64(i)}, emit)
+		if i&511 == 511 {
+			op.Advance(emit)
+		}
+	}
+}

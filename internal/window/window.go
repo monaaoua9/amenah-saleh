@@ -71,7 +71,8 @@ type Operator struct {
 	// Runs on the worker goroutine; set before the first Add.
 	OnLate func(event.Event)
 
-	timers     timerHeap
+	due        map[int64][]wkey // when -> windows needing attention then
+	dueTimes   int64Heap        // each key of due once
 	sessTimers sessHeap
 	sched      map[string]int64 // session key -> at of its live heap entry
 }
@@ -90,6 +91,7 @@ func New(cfg Config) *Operator {
 		sess:  make(map[string][]*session),
 		wm:    Watermark{Disorder: cfg.Disorder},
 		sched: make(map[string]int64),
+		due:   make(map[int64][]wkey),
 	}
 }
 
@@ -110,7 +112,11 @@ func (o *Operator) Add(e event.Event, emit func(event.Result)) {
 	wm := o.wm.Current()
 
 	// newest window containing e.Time, then walk back while it still covers it
-	start := e.Time - ((e.Time%slide)+slide)%slide
+	rem := e.Time % slide // one division; the old double-mod form paid for two
+	if rem < 0 {
+		rem += slide
+	}
+	start := e.Time - rem
 	taken := false
 	for ; start+size > e.Time; start -= slide {
 		// older windows only end earlier, so the rest are late too
@@ -131,7 +137,7 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 	if a == nil {
 		a = &acc{Min: e.Value, Max: e.Value}
 		o.wins[k] = a
-		heap.Push(&o.timers, timer{k.Start + o.cfg.Size, k})
+		o.schedule(k.Start+o.cfg.Size, k)
 	}
 	a.Count++
 	a.Sum += e.Value
@@ -168,21 +174,30 @@ func (o *Operator) Advance(emit func(event.Result)) {
 		return
 	}
 	wm := o.wm.Current()
-	for len(o.timers) > 0 && o.timers[0].at <= wm {
-		t := heap.Pop(&o.timers).(timer)
-		a := o.wins[t.k]
-		if a == nil {
-			continue
+	for len(o.dueTimes) > 0 && o.dueTimes[0] <= wm {
+		at := heap.Pop(&o.dueTimes).(int64)
+		ks := o.due[at]
+		delete(o.due, at)
+		var wait []wkey
+		for _, k := range ks {
+			a := o.wins[k]
+			if a == nil {
+				continue
+			}
+			end := k.Start + o.cfg.Size
+			if !a.Fired {
+				emit(toResult(k, a, o.cfg.Size))
+				a.Fired = true
+			}
+			if end+o.cfg.Lateness <= wm {
+				delete(o.wins, k)
+			} else {
+				wait = append(wait, k)
+			}
 		}
-		end := t.k.Start + o.cfg.Size
-		if !a.Fired {
-			emit(toResult(t.k, a, o.cfg.Size))
-			a.Fired = true
-		}
-		if end+o.cfg.Lateness <= wm {
-			delete(o.wins, t.k)
-		} else {
-			heap.Push(&o.timers, timer{end + o.cfg.Lateness, t.k})
+		// same lateness for everyone, so they all expire together
+		if len(wait) > 0 {
+			o.schedule(at+o.cfg.Lateness, wait...)
 		}
 	}
 }

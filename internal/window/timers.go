@@ -6,23 +6,28 @@ import "container/heap"
 // proportional to what actually fires. They are derived state: never
 // snapshotted, rebuilt by rebuildTimers after a restore.
 
-type timer struct {
-	at int64
-	k  wkey
-}
+// Windows are grouped by the instant they next need attention, so the heap
+// holds one entry per distinct time instead of one per window: every tumbling
+// window of a given Start shares an end, across all keys.
+type int64Heap []int64
 
-type timerHeap []timer
-
-func (h timerHeap) Len() int           { return len(h) }
-func (h timerHeap) Less(i, j int) bool { return h[i].at < h[j].at }
-func (h timerHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *timerHeap) Push(x any)        { *h = append(*h, x.(timer)) }
-func (h *timerHeap) Pop() any {
+func (h int64Heap) Len() int           { return len(h) }
+func (h int64Heap) Less(i, j int) bool { return h[i] < h[j] }
+func (h int64Heap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *int64Heap) Push(x any)        { *h = append(*h, x.(int64)) }
+func (h *int64Heap) Pop() any {
 	old := *h
 	n := len(old)
 	t := old[n-1]
 	*h = old[:n-1]
 	return t
+}
+
+func (o *Operator) schedule(at int64, ks ...wkey) {
+	if _, ok := o.due[at]; !ok {
+		heap.Push(&o.dueTimes, at)
+	}
+	o.due[at] = append(o.due[at], ks...)
 }
 
 type sessTimer struct {
@@ -45,18 +50,18 @@ func (h *sessHeap) Pop() any {
 }
 
 func (o *Operator) rebuildTimers() {
-	o.timers = o.timers[:0]
+	o.due = make(map[int64][]wkey)
+	o.dueTimes = o.dueTimes[:0]
 	o.sessTimers = o.sessTimers[:0]
 	o.sched = make(map[string]int64)
 	for k, a := range o.wins {
 		end := k.Start + o.cfg.Size
 		if a.Fired {
-			o.timers = append(o.timers, timer{end + o.cfg.Lateness, k})
+			o.schedule(end+o.cfg.Lateness, k)
 		} else {
-			o.timers = append(o.timers, timer{end, k})
+			o.schedule(end, k)
 		}
 	}
-	heap.Init(&o.timers)
 
 	for key := range o.sess {
 		o.scheduleSession(key)

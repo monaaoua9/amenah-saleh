@@ -117,9 +117,9 @@ Everything below sits outside the exactly-once core and is wired in
   relative error. It merges, which is what session bridging needs, and it is
   gob-encoded inside the window snapshot, so it is checkpointed and rescaled
   like the other aggregates. Off by default; the per-event cost is a `log`.
-- **Timers** (`internal/window/timers.go`): `Advance` pops due windows off a min-heap
-  of end times (and, for sessions, one entry per key) instead of scanning all
-  open state. With 200k open windows a no-op `Advance` went from ~12 ms to
+- **Timers** (`internal/window/timers.go`): `Advance` pops due times off a min-heap
+  (one entry per distinct end time, with the windows due then bucketed under it;
+  for sessions, one entry per key) instead of scanning all open state. With 200k open windows a no-op `Advance` went from ~12 ms to
   ~20 ns. The heaps are derived state, rebuilt after every restore, so snapshots
   are unchanged. `timers_test.go` runs the heap against the old full scan on
   random out-of-order input.
