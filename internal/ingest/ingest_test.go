@@ -77,3 +77,39 @@ func TestOverloadMapsToResourceExhausted(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestFilterDropsButAcksEverything(t *testing.T) {
+	f := &fake{}
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := grpc.NewServer()
+	srv := NewServer(f, false).WithFilter(func(e event.Event) bool { return e.Value > 1 })
+	srv.Register(g)
+	go g.Serve(lis)
+	t.Cleanup(g.Stop)
+	c, err := Dial(context.Background(), lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	evs := []event.Event{{Key: "a", Value: 1, Seq: 1}, {Key: "b", Value: 5, Seq: 2}, {Key: "c", Value: 0, Seq: 3}}
+	if err := c.Send("p", evs); err != nil {
+		t.Fatal(err)
+	}
+	ack, err := c.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.LastSeq != 3 {
+		t.Fatalf("ack covers %d, want 3", ack.LastSeq)
+	}
+	if len(f.got) != 1 || len(f.got[0]) != 1 || f.got[0][0].Key != "b" {
+		t.Fatalf("engine saw %+v", f.got)
+	}
+	if srv.Filtered() != 2 {
+		t.Fatalf("filtered=%d", srv.Filtered())
+	}
+}

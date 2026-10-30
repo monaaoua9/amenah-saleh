@@ -19,6 +19,7 @@ import (
 	"github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
 	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/filter"
 	"github.com/monaaoua9/amenah-saleh/internal/ingest"
 	"github.com/monaaoua9/amenah-saleh/internal/output"
 	"github.com/monaaoua9/amenah-saleh/internal/security"
@@ -79,6 +80,7 @@ func main() {
 	token := flag.String("token", "", "require this bearer token on every rpc; workers must pass the same")
 	tlsCert := flag.String("tls-cert", "", "serve grpc over TLS (with -tls-key); workers: trust this cert")
 	tlsKey := flag.String("tls-key", "", "TLS private key")
+	filterSrc := flag.String("filter", "", "drop events that do not match, e.g. value >= 0 && key ~ 'sensor-'")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -130,6 +132,13 @@ func main() {
 	}
 	g := grpc.NewServer(append(secOpts, grpc.MaxRecvMsgSize(engine.MaxMsgSize), grpc.MaxSendMsgSize(engine.MaxMsgSize))...)
 	is := ingest.NewServer(cur, *shed)
+	if *filterSrc != "" {
+		f, err := filter.Parse(*filterSrc)
+		if err != nil {
+			log.Fatal(err)
+		}
+		is.WithFilter(f)
+	}
 	if *rate > 0 {
 		is.WithRate(*rate, int(*rate)) // one second of burst
 	}
