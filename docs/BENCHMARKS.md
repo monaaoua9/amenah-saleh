@@ -62,3 +62,28 @@ Median 1,296,184 events/s (1.25M – 1.33M).
 ## Not rerun today
 
 The cluster-mode figure in the README (master plus three worker processes on one machine, about 0.8M events/s) and checkpoint/recovery timings. This file doesn't compare streamdb with Flink or anything else.
+
+## Operator and checkpoint micro-benchmarks, after the optimization pass
+
+Measured 2026-10-30 on the same laptop, which was busy (six terminals open), so
+read these as ratios, not absolute figures. Old and new binaries ran alternately,
+five rounds; the numbers are the best round of each. The old side is the commit
+before the change being measured.
+
+| benchmark | before | after |
+|---|---:|---:|
+| `BenchmarkAddAdvance` (tumbling, 256 keys, Advance every 512 events) | 127 ns/event | 77 ns/event |
+| `BenchmarkAddAdvanceSliding` (4 windows per event) | 299 ns/event | 119 ns/event |
+| `BenchmarkSnapshot` (~100k open windows) | 374 ms (gob) | 28 ms (binary) |
+| `BenchmarkEncodeResults` (10k staged results) | 64 ms (gob) | 10 ms (binary) |
+
+What changed: open windows are grouped by key (the key is hashed once per event
+instead of once per window), timers are bucketed by due time, and the snapshot
+and the staged sink output use a flat binary format instead of gob. Commands:
+
+```
+go test -run xxx -bench 'AddAdvance|Snapshot|EncodeResults' ./internal/window ./internal/engine
+```
+
+The pipeline figures at the top of this file have not been redone since; see the
+note there.

@@ -117,6 +117,10 @@ Everything below sits outside the exactly-once core and is wired in
   relative error. It merges, which is what session bridging needs, and it is
   gob-encoded inside the window snapshot, so it is checkpointed and rescaled
   like the other aggregates. Off by default; the per-event cost is a `log`.
+- **Window state layout** (`internal/window/keywins.go`): open tumbling and sliding
+  windows live in a small slice per key rather than one map keyed by (key, start).
+  The key is hashed once per event, and the timer buckets hold direct references
+  so firing and expiring a window needs no lookup at all.
 - **Timers** (`internal/window/timers.go`): `Advance` pops due times off a min-heap
   (one entry per distinct end time, with the windows due then bucketed under it;
   for sessions, one entry per key) instead of scanning all open state. With 200k open windows a no-op `Advance` went from ~12 ms to
