@@ -2,6 +2,7 @@ package window
 
 import (
 	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/hll"
 	"github.com/monaaoua9/amenah-saleh/internal/sketch"
 )
 
@@ -21,6 +22,10 @@ func (o *Operator) addSession(e event.Event) {
 	if o.cfg.Quantiles {
 		ns.A.Q = sketch.New()
 		ns.A.Q.Add(e.Value)
+	}
+	if o.cfg.Distinct {
+		ns.A.D = hll.New()
+		ns.A.D.AddFloat(e.Value)
 	}
 	var keep []*session
 	for _, s := range o.sess[e.Key] {
@@ -42,6 +47,12 @@ func (o *Operator) addSession(e event.Event) {
 			}
 			ns.A.Q.Merge(s.A.Q)
 		}
+		if s.A.D != nil {
+			if ns.A.D == nil {
+				ns.A.D = hll.New()
+			}
+			ns.A.D.Merge(s.A.D)
+		}
 	}
 	o.sess[e.Key] = append(keep, ns)
 	o.wm.Observe(e.Time)
@@ -61,6 +72,7 @@ func (o *Operator) advanceSessions(emit func(event.Result)) {
 				Count: s.A.Count, Sum: s.A.Sum, SumSq: s.A.SumSq, Min: s.A.Min, Max: s.A.Max,
 			}
 			r.P50, r.P95, r.P99 = quantiles(&s.A)
+			r.Distinct = s.A.D.Count()
 			emit(r)
 		}
 		if len(keep) == 0 {

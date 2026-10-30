@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/hll"
 	"github.com/monaaoua9/amenah-saleh/internal/sketch"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	Disorder  int64 // ms, feeds the watermark
 	MaxJump   int64 // ms, an event further ahead of the watermark base than this is dropped; 0 = unlimited
 	Quantiles bool  // keep a sketch per window and report p50/p95/p99 (costs memory and some throughput)
+	Distinct  bool  // count distinct values per window with a HyperLogLog (1 KiB per open window)
 }
 
 // anything outside this is a bad clock or a hostile producer; it would also
@@ -53,6 +55,7 @@ type acc struct {
 	Min, Max float64
 	Fired    bool
 	Q        *sketch.Sketch
+	D        *hll.Sketch
 }
 
 // Operator is single-threaded, one per worker.
@@ -132,6 +135,12 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 		}
 		a.Q.Add(e.Value)
 	}
+	if o.cfg.Distinct {
+		if a.D == nil {
+			a.D = hll.New()
+		}
+		a.D.AddFloat(e.Value)
+	}
 	if e.Value < a.Min {
 		a.Min = e.Value
 	}
@@ -185,6 +194,7 @@ func toResult(k wkey, a *acc, size int64) event.Result {
 		Count: a.Count, Sum: a.Sum, SumSq: a.SumSq, Min: a.Min, Max: a.Max,
 	}
 	r.P50, r.P95, r.P99 = quantiles(a)
+	r.Distinct = a.D.Count()
 	return r
 }
 

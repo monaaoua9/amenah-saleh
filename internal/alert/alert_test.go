@@ -100,3 +100,12 @@ func TestPercentileRule(t *testing.T) {
 		t.Fatalf("%+v", *got)
 	}
 }
+
+func TestDistinctRule(t *testing.T) {
+	ev, got := collect([]string{"distinct < 3"}, 0)
+	ev.Write(event.Result{Key: "a", Distinct: 2})
+	ev.Write(event.Result{Key: "b", Distinct: 9})
+	if len(*got) != 1 || (*got)[0].Result.Key != "a" {
+		t.Fatalf("%+v", *got)
+	}
+}

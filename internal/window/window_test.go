@@ -294,3 +294,44 @@ func TestSlidingWindowsEachGetOwnSketch(t *testing.T) {
 		t.Fatalf("[-1000,1000): %+v", r)
 	}
 }
+
+func TestDistinctOffByDefault(t *testing.T) {
+	op := New(Config{Size: 1000})
+	op.Add(event.Event{Key: "k", Value: 1, Time: 1}, nil)
+	if r := fire(op, 5000); len(r) != 1 || r[0].Distinct != 0 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestDistinctCountsValuesNotEvents(t *testing.T) {
+	op := New(Config{Size: 1000, Distinct: true})
+	for i := 0; i < 600; i++ {
+		op.Add(event.Event{Key: "k", Value: float64(i % 200), Time: int64(i)}, nil)
+	}
+	r := fire(op, 5000)
+	if len(r) != 1 || r[0].Count != 600 || r[0].Distinct < 185 || r[0].Distinct > 215 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestDistinctSurvivesSnapshotAndSessionMerge(t *testing.T) {
+	cfg := Config{Gap: 100, Disorder: 500, Distinct: true}
+	op := New(cfg)
+	for i := 0; i < 50; i++ {
+		op.Add(event.Event{Key: "k", Value: float64(i), Time: 0}, nil)
+		op.Add(event.Event{Key: "k", Value: float64(1000 + i), Time: 200}, nil)
+	}
+	b, err := op.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	op2 := New(cfg)
+	if err := op2.Restore(b); err != nil {
+		t.Fatal(err)
+	}
+	op2.Add(event.Event{Key: "k", Value: 5000, Time: 100}, nil) // bridge
+	r := fire(op2, 10000)
+	if len(r) != 1 || r[0].Distinct < 95 || r[0].Distinct > 108 {
+		t.Fatalf("%+v", r)
+	}
+}

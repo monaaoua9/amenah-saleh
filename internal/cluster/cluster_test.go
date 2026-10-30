@@ -273,7 +273,7 @@ func TestRemoteRescale(t *testing.T) {
 // quantiles, sum of squares and window config all have to cross the wire
 func TestRemoteCarriesQuantilesAndSumSq(t *testing.T) {
 	evs := gen(3000)
-	withQ := func(c *engine.Config) { c.Window.Quantiles = true }
+	withQ := func(c *engine.Config) { c.Window.Quantiles, c.Window.Distinct = true, true }
 
 	local := newCollector()
 	lc := cfg(t.TempDir(), local)
@@ -313,8 +313,13 @@ func TestRemoteCarriesQuantilesAndSumSq(t *testing.T) {
 	}
 	for k, w := range local.res {
 		g := got.res[k]
-		if g.SumSq != w.SumSq || g.P50 != w.P50 || g.P95 != w.P95 || g.P99 != w.P99 {
+		if g.SumSq != w.SumSq || g.P50 != w.P50 || g.P95 != w.P95 || g.P99 != w.P99 || g.Distinct != w.Distinct {
 			t.Fatalf("window %s: remote %+v local %+v", k, g, w)
+		}
+	}
+	for _, r := range got.res {
+		if r.Distinct == 0 {
+			t.Fatalf("distinct missing: %+v", r)
 		}
 	}
 	for _, r := range got.res {

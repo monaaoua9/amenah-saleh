@@ -31,6 +31,7 @@ type WindowConfig struct {
 	Disorder      int64                  `protobuf:"varint,5,opt,name=disorder,proto3" json:"disorder,omitempty"`
 	MaxJump       int64                  `protobuf:"varint,6,opt,name=max_jump,json=maxJump,proto3" json:"max_jump,omitempty"`
 	Quantiles     bool                   `protobuf:"varint,7,opt,name=quantiles,proto3" json:"quantiles,omitempty"`
+	Distinct      bool                   `protobuf:"varint,8,opt,name=distinct,proto3" json:"distinct,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,6 +111,13 @@ func (x *WindowConfig) GetMaxJump() int64 {
 func (x *WindowConfig) GetQuantiles() bool {
 	if x != nil {
 		return x.Quantiles
+	}
+	return false
+}
+
+func (x *WindowConfig) GetDistinct() bool {
+	if x != nil {
+		return x.Distinct
 	}
 	return false
 }
@@ -493,6 +501,7 @@ type Result struct {
 	P50           float64                `protobuf:"fixed64,10,opt,name=p50,proto3" json:"p50,omitempty"`
 	P95           float64                `protobuf:"fixed64,11,opt,name=p95,proto3" json:"p95,omitempty"`
 	P99           float64                `protobuf:"fixed64,12,opt,name=p99,proto3" json:"p99,omitempty"`
+	Distinct      uint64                 `protobuf:"varint,13,opt,name=distinct,proto3" json:"distinct,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -607,6 +616,13 @@ func (x *Result) GetP95() float64 {
 func (x *Result) GetP99() float64 {
 	if x != nil {
 		return x.P99
+	}
+	return 0
+}
+
+func (x *Result) GetDistinct() uint64 {
+	if x != nil {
+		return x.Distinct
 	}
 	return 0
 }
@@ -939,7 +955,7 @@ var File_proto_cluster_proto protoreflect.FileDescriptor
 
 const file_proto_cluster_proto_rawDesc = "" +
 	"\n" +
-	"\x13proto/cluster.proto\x12\adspe.v1\x1a\x12proto/ingest.proto\"\xbb\x01\n" +
+	"\x13proto/cluster.proto\x12\adspe.v1\x1a\x12proto/ingest.proto\"\xd7\x01\n" +
 	"\fWindowConfig\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x03R\x04size\x12\x14\n" +
 	"\x05slide\x18\x02 \x01(\x03R\x05slide\x12\x10\n" +
@@ -947,7 +963,8 @@ const file_proto_cluster_proto_rawDesc = "" +
 	"\blateness\x18\x04 \x01(\x03R\blateness\x12\x1a\n" +
 	"\bdisorder\x18\x05 \x01(\x03R\bdisorder\x12\x19\n" +
 	"\bmax_jump\x18\x06 \x01(\x03R\amaxJump\x12\x1c\n" +
-	"\tquantiles\x18\a \x01(\bR\tquantiles\"\xbf\x01\n" +
+	"\tquantiles\x18\a \x01(\bR\tquantiles\x12\x1a\n" +
+	"\bdistinct\x18\b \x01(\bR\bdistinct\"\xbf\x01\n" +
 	"\x04Init\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\x05R\bworkerId\x12\x18\n" +
 	"\aworkers\x18\x02 \x01(\x05R\aworkers\x12\x14\n" +
@@ -971,7 +988,7 @@ const file_proto_cluster_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\v2\r.dspe.v1.DataH\x00R\x04data\x12,\n" +
 	"\abarrier\x18\x03 \x01(\v2\x10.dspe.v1.BarrierH\x00R\abarrier\x12&\n" +
 	"\x05punct\x18\x04 \x01(\v2\x0e.dspe.v1.PunctH\x00R\x05punctB\x05\n" +
-	"\x03msg\"\xef\x01\n" +
+	"\x03msg\"\x8b\x02\n" +
 	"\x06Result\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05start\x18\x02 \x01(\x03R\x05start\x12\x10\n" +
@@ -985,7 +1002,8 @@ const file_proto_cluster_proto_rawDesc = "" +
 	"\x03p50\x18\n" +
 	" \x01(\x01R\x03p50\x12\x10\n" +
 	"\x03p95\x18\v \x01(\x01R\x03p95\x12\x10\n" +
-	"\x03p99\x18\f \x01(\x01R\x03p99\"4\n" +
+	"\x03p99\x18\f \x01(\x01R\x03p99\x12\x1a\n" +
+	"\bdistinct\x18\r \x01(\x04R\bdistinct\"4\n" +
 	"\aResults\x12)\n" +
 	"\aresults\x18\x01 \x03(\v2\x0f.dspe.v1.ResultR\aresults\"\x1d\n" +
 	"\vSinkBarrier\x12\x0e\n" +

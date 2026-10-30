@@ -14,6 +14,7 @@ message WindowConfig {
   int64 disorder = 5;
   int64 max_jump = 6;
   bool quantiles = 7;
+  bool distinct = 8;
 }
 
 // First message on every stream. Snapshots are only set when restoring: just
@@ -66,6 +67,7 @@ message Result {
   double p50 = 10;
   double p95 = 11;
   double p99 = 12;
+  uint64 distinct = 13;
 }
 
 message Results {

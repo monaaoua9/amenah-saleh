@@ -10,18 +10,19 @@ type Event struct {
 }
 
 type Result struct {
-	Key   string  `json:"key"`
-	Start int64   `json:"start"`
-	End   int64   `json:"end"`
-	Count int64   `json:"count"`
-	Sum   float64 `json:"sum"`
-	Min   float64 `json:"min"`
-	Max   float64 `json:"max"`
-	Late  bool    `json:"late,omitempty"` // refire caused by late data inside allowed lateness
-	SumSq float64 `json:"sum_sq"`
-	P50   float64 `json:"p50,omitempty"` // only when window.Config.Quantiles is on
-	P95   float64 `json:"p95,omitempty"`
-	P99   float64 `json:"p99,omitempty"`
+	Key      string  `json:"key"`
+	Start    int64   `json:"start"`
+	End      int64   `json:"end"`
+	Count    int64   `json:"count"`
+	Sum      float64 `json:"sum"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+	Late     bool    `json:"late,omitempty"` // refire caused by late data inside allowed lateness
+	SumSq    float64 `json:"sum_sq"`
+	P50      float64 `json:"p50,omitempty"` // only when window.Config.Quantiles is on
+	P95      float64 `json:"p95,omitempty"`
+	P99      float64 `json:"p99,omitempty"`
+	Distinct uint64  `json:"distinct,omitempty"` // distinct values, only with window.Config.Distinct
 }
 
 func (r Result) Avg() float64 {
@@ -45,7 +46,7 @@ func (r Result) StdDev() float64 {
 	return math.Sqrt(v)
 }
 
-// Metric picks one of count, sum, min, max, avg, stddev, p50, p95, p99 by name.
+// Metric picks one of count, sum, min, max, avg, stddev, p50, p95, p99, distinct by name.
 // The percentiles are zero unless the engine runs with quantiles on.
 func (r Result) Metric(name string) (float64, bool) {
 	switch name {
@@ -67,6 +68,8 @@ func (r Result) Metric(name string) (float64, bool) {
 		return r.P95, true
 	case "p99":
 		return r.P99, true
+	case "distinct":
+		return float64(r.Distinct), true
 	}
 	return 0, false
 }

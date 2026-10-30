@@ -506,9 +506,9 @@ func (e *Engine) Stats() Stats {
 }
 
 func windowToWire(c window.Config) *cpb.WindowConfig {
-	return &cpb.WindowConfig{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder, MaxJump: c.MaxJump, Quantiles: c.Quantiles}
+	return &cpb.WindowConfig{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder, MaxJump: c.MaxJump, Quantiles: c.Quantiles, Distinct: c.Distinct}
 }
 
 func windowFromWire(c *cpb.WindowConfig) window.Config {
-	return window.Config{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder, MaxJump: c.MaxJump, Quantiles: c.Quantiles}
+	return window.Config{Size: c.Size, Slide: c.Slide, Gap: c.Gap, Lateness: c.Lateness, Disorder: c.Disorder, MaxJump: c.MaxJump, Quantiles: c.Quantiles, Distinct: c.Distinct}
 }
