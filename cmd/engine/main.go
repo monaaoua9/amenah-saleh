@@ -74,6 +74,7 @@ func main() {
 	outMax := flag.Int64("outmax", 64<<20, "roll the -out file after this many bytes, 0 = never")
 	webhook := flag.String("webhook", "", "POST result batches to this url")
 	httpAddr := flag.String("http", "", "http api (/results, /stats, /healthz, /readyz, /metrics), off when empty")
+	rate := flag.Float64("rate", 0, "per-producer limit, events/sec, 0 = off")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -116,7 +117,11 @@ func main() {
 
 	cur := &current{}
 	g := grpc.NewServer(grpc.MaxRecvMsgSize(engine.MaxMsgSize), grpc.MaxSendMsgSize(engine.MaxMsgSize))
-	ingest.NewServer(cur, *shed).Register(g)
+	is := ingest.NewServer(cur, *shed)
+	if *rate > 0 {
+		is.WithRate(*rate, int(*rate)) // one second of burst
+	}
+	is.Register(g)
 	var hub *cluster.Hub
 	if *role == "master" {
 		hub = cluster.NewHub()

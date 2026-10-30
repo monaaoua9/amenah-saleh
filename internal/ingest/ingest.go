@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,9 +26,17 @@ type Server struct {
 	sub Submitter
 	// shed = reject with RESOURCE_EXHAUSTED when full instead of stalling the stream
 	shed bool
+	lim  *limiter
 }
 
 func NewServer(sub Submitter, shed bool) *Server { return &Server{sub: sub, shed: shed} }
+
+// WithRate caps each producer at rate events/sec (burst tokens of slack). When
+// the server sheds it rejects over-limit batches, otherwise it slows the stream.
+func (s *Server) WithRate(rate float64, burst int) *Server {
+	s.lim = &limiter{rate: rate, burst: burst}
+	return s
+}
 
 func (s *Server) Register(g *grpc.Server) { pb.RegisterIngestServer(g, s) }
 
@@ -45,6 +54,21 @@ func (s *Server) Stream(st grpc.BidiStreamingServer[pb.Batch, pb.Ack]) error {
 		evs := make([]event.Event, len(b.Events))
 		for i, e := range b.Events {
 			evs[i] = event.Event{Key: e.Key, Value: e.Value, Time: e.Time, Seq: e.Seq}
+		}
+
+		if s.lim != nil {
+			bk := s.lim.bucket(b.Producer)
+			if wait := bk.take(len(evs)); wait > 0 {
+				if s.shed {
+					bk.refund(len(evs))
+					return status.Error(codes.ResourceExhausted, "rate limit")
+				}
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
 		}
 
 		if s.shed {
