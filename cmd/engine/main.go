@@ -8,12 +8,14 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/monaaoua9/amenah-saleh/internal/alert"
 	"github.com/monaaoua9/amenah-saleh/internal/api"
 	"github.com/monaaoua9/amenah-saleh/internal/cluster"
 	"github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
@@ -81,6 +83,9 @@ func main() {
 	tlsCert := flag.String("tls-cert", "", "serve grpc over TLS (with -tls-key); workers: trust this cert")
 	tlsKey := flag.String("tls-key", "", "TLS private key")
 	filterSrc := flag.String("filter", "", "drop events that do not match, e.g. value >= 0 && key ~ 'sensor-'")
+	alertRules := flag.String("alert", "", "alert rules separated by ;, e.g. 'avg > 80 key=cpu-; count < 3'")
+	alertCool := flag.Int64("alertcooldown", 60000, "ms of event time before the same rule fires again for a key")
+	alertHook := flag.String("alerthook", "", "POST alerts as JSON to this url (they are always logged)")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -105,6 +110,28 @@ func main() {
 	sinks := []output.Sink{output.Func(func(event.Result) { out.Add(1) })}
 	recent := api.NewRecent(10000)
 	sinks = append(sinks, recent)
+	if *alertRules != "" {
+		var rules []alert.Rule
+		for _, s := range strings.Split(*alertRules, ";") {
+			r, err := alert.ParseRule(strings.TrimSpace(s))
+			if err != nil {
+				log.Fatal(err)
+			}
+			rules = append(rules, r)
+		}
+		notify := func(a alert.Alert) {
+			log.Printf("ALERT %s: %g on %s [%d,%d)", a.Rule, a.Value, a.Result.Key, a.Result.Start, a.Result.End)
+		}
+		if *alertHook != "" {
+			h := alert.NewHook(*alertHook)
+			defer h.Close()
+			notify = func(a alert.Alert) {
+				log.Printf("ALERT %s: %g on %s", a.Rule, a.Value, a.Result.Key)
+				h.Notify(a)
+			}
+		}
+		sinks = append(sinks, alert.NewEvaluator(rules, *alertCool, notify))
+	}
 	if *outPath != "" {
 		f, err := output.NewFile(*outPath, *outMax)
 		if err != nil {
