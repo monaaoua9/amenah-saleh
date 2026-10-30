@@ -1,9 +1,7 @@
 package engine
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"sync"
 
 	"github.com/monaaoua9/streamdb/internal/event"
@@ -98,22 +96,4 @@ func (s *sink) commit(id uint64) {
 		}
 	}
 	s.st = s.st[i:]
-}
-
-func encodeResults(r [][]event.Result) ([]byte, error) {
-	var buf bytes.Buffer
-	err := gob.NewEncoder(&buf).Encode(r)
-	return buf.Bytes(), err
-}
-
-func decodeResults(b []byte) ([]event.Result, error) {
-	var chunks [][]event.Result
-	if err := gob.NewDecoder(bytes.NewReader(b)).Decode(&chunks); err != nil {
-		return nil, err
-	}
-	var flat []event.Result
-	for _, c := range chunks {
-		flat = append(flat, c...)
-	}
-	return flat, nil
 }
