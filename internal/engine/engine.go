@@ -28,13 +28,14 @@ var (
 )
 
 type Config struct {
-	Lanes, Workers  int
-	QueueDepth      int   // batches per channel
-	MaxInflight     int64 // events admitted but not yet fully processed; the real memory bound
-	Window          window.Config
-	Partitioner     partition.Partitioner
-	CheckpointDir   string
-	CheckpointEvery time.Duration // 0 = manual only
+	Lanes, Workers     int
+	QueueDepth         int   // batches per channel
+	MaxInflight        int64 // events admitted but not yet fully processed; the real memory bound
+	Window             window.Config
+	Partitioner        partition.Partitioner
+	CheckpointDir      string
+	CheckpointEvery    time.Duration // 0 = manual only
+	CheckpointCompress bool          // gzip snapshots; restore reads both forms
 	// Staged-but-uncommitted results above this count make the sink ask for an
 	// early checkpoint. Soft: what arrives before the barrier lands still piles
 	// on top. 0 = no limit.
@@ -139,7 +140,7 @@ func (e *Engine) start(ctx context.Context) error {
 		}
 	}
 	e.credits = semaphore.NewWeighted(cfg.MaxInflight)
-	e.store = checkpoint.NewStore(cfg.CheckpointDir)
+	e.store = checkpoint.NewStore(cfg.CheckpointDir).Compress(cfg.CheckpointCompress)
 
 	e.sink = &sink{
 		in:  make(chan sinkMsg, cfg.QueueDepth),

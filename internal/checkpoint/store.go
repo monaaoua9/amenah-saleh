@@ -1,8 +1,11 @@
 package checkpoint
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,12 +16,20 @@ import (
 
 type Store struct {
 	dir      string
+	compress bool
 	failNext atomic.Bool // tests only
 }
 
 func (s *Store) FailCommitForTest(on bool) { s.failNext.Store(on) }
 
 func NewStore(dir string) *Store { return &Store{dir: dir} }
+
+// Compress makes later Puts write gzip (task.snap.gz). Get reads either form,
+// so a directory can hold a mix after the setting is flipped.
+func (s *Store) Compress(on bool) *Store {
+	s.compress = on
+	return s
+}
 
 func (s *Store) path(id uint64) string {
 	return filepath.Join(s.dir, fmt.Sprintf("chk-%08d", id))
@@ -28,6 +39,16 @@ func (s *Store) Put(id uint64, task string, data []byte) error {
 	d := s.path(id)
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err
+	}
+	ext := ".snap"
+	if s.compress {
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		zw.Write(data)
+		if err := zw.Close(); err != nil {
+			return err
+		}
+		data, ext = buf.Bytes(), ".snap.gz"
 	}
 	tmp := filepath.Join(d, task+".tmp")
 	f, err := os.Create(tmp)
@@ -45,7 +66,7 @@ func (s *Store) Put(id uint64, task string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, filepath.Join(d, task+".snap")); err != nil {
+	if err := os.Rename(tmp, filepath.Join(d, task+ext)); err != nil {
 		return err
 	}
 	syncDir(d)
@@ -82,7 +103,19 @@ func syncDir(d string) {
 }
 
 func (s *Store) Get(id uint64, task string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(s.path(id), task+".snap"))
+	b, err := os.ReadFile(filepath.Join(s.path(id), task+".snap"))
+	if err == nil {
+		return b, nil
+	}
+	z, zerr := os.ReadFile(filepath.Join(s.path(id), task+".snap.gz"))
+	if zerr != nil {
+		return nil, err // the plain-file error is the more useful one
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(z))
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(zr)
 }
 
 // a checkpoint doesn't exist until this marker does

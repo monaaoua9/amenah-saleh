@@ -86,6 +86,7 @@ func main() {
 	alertRules := flag.String("alert", "", "alert rules separated by ;, e.g. 'avg > 80 key=cpu-; count < 3'")
 	alertCool := flag.Int64("alertcooldown", 60000, "ms of event time before the same rule fires again for a key")
 	alertHook := flag.String("alerthook", "", "POST alerts as JSON to this url (they are always logged)")
+	ckGzip := flag.Bool("ckgzip", false, "gzip checkpoint snapshots")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -148,7 +149,7 @@ func main() {
 	base := engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
 		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder, MaxJump: *maxJump},
-		CheckpointDir: *dir, CheckpointEvery: *every, MaxPending: *maxPending,
+		CheckpointDir: *dir, CheckpointEvery: *every, CheckpointCompress: *ckGzip, MaxPending: *maxPending,
 		OnResult: output.Fanout(sinks...),
 	}
 

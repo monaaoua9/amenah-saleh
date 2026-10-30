@@ -452,3 +452,50 @@ func TestFailedCheckpointOutputSurvivesNextOne(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreAcrossCompressionChange(t *testing.T) {
+	evs := gen(12000)
+
+	base := newCollector()
+	e := New(testCfg(t.TempDir(), base))
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e, evs)
+	finish(t, e)
+	e.Stop()
+
+	dir := t.TempDir()
+	got := newCollector()
+	cfg := testCfg(dir, got)
+	cfg.CheckpointCompress = true
+	e1 := New(cfg)
+	if err := e1.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e1, evs[:7000])
+	if _, err := e1.Checkpoint(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e1.Stop()
+	if m, _ := filepath.Glob(filepath.Join(dir, "chk-*", "worker-0.snap.gz")); len(m) == 0 {
+		t.Fatal("no gzip snapshots written")
+	}
+
+	e2 := New(testCfg(dir, got)) // compression off this time
+	if err := e2.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, e2, evs)
+	finish(t, e2)
+	e2.Stop()
+
+	if got.n != base.n {
+		t.Fatalf("emitted %d, want %d", got.n, base.n)
+	}
+	for k, w := range base.res {
+		if g := got.res[k]; g.Count != w.Count || g.Sum != w.Sum {
+			t.Fatalf("window %s: got %+v want %+v", k, g, w)
+		}
+	}
+}
