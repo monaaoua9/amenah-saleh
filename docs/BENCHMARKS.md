@@ -2,6 +2,14 @@
 
 Measured 2026-10-29.
 
+> **Stale for the in-process numbers.** These were taken at commit `5ff7cb2`,
+> before sum of squares, quantile and distinct state, and the window timer heap
+> were added. A back-to-back comparison on 2026-10-30 (old and new binaries
+> alternating on the same laptop) showed the current code about 10-25% slower
+> on the pipeline benchmark (~200 B/event instead of ~150) and about 10% slower
+> on `Add`. The laptop then started throttling, so there is no clean rerun yet.
+> The gRPC and cluster figures were not re-compared like this.
+
 | | |
 |---|---|
 | CPU | Intel i5-8365U, 4 cores / 8 threads, 1.6 GHz base |
