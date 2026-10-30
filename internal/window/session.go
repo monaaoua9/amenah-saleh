@@ -14,7 +14,7 @@ func (o *Operator) addSession(e event.Event) {
 		return
 	}
 
-	ns := &session{Start: e.Time, End: e.Time + gap, A: acc{Count: 1, Sum: e.Value, Min: e.Value, Max: e.Value}}
+	ns := &session{Start: e.Time, End: e.Time + gap, A: acc{Count: 1, Sum: e.Value, SumSq: e.Value * e.Value, Min: e.Value, Max: e.Value}}
 	var keep []*session
 	for _, s := range o.sess[e.Key] {
 		if s.Start > ns.End || ns.Start > s.End {
@@ -26,6 +26,7 @@ func (o *Operator) addSession(e event.Event) {
 		ns.End = max(ns.End, s.End)
 		ns.A.Count += s.A.Count
 		ns.A.Sum += s.A.Sum
+		ns.A.SumSq += s.A.SumSq
 		ns.A.Min = min(ns.A.Min, s.A.Min)
 		ns.A.Max = max(ns.A.Max, s.A.Max)
 	}
@@ -44,7 +45,7 @@ func (o *Operator) advanceSessions(emit func(event.Result)) {
 			}
 			emit(event.Result{
 				Key: k, Start: s.Start, End: s.End,
-				Count: s.A.Count, Sum: s.A.Sum, Min: s.A.Min, Max: s.A.Max,
+				Count: s.A.Count, Sum: s.A.Sum, SumSq: s.A.SumSq, Min: s.A.Min, Max: s.A.Max,
 			})
 		}
 		if len(keep) == 0 {

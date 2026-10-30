@@ -173,3 +173,32 @@ func TestValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestAvgAndStdDev(t *testing.T) {
+	op := New(Config{Size: 1000})
+	var got []event.Result
+	for i, v := range []float64{2, 4, 4, 4, 5, 5, 7, 9} {
+		op.Add(event.Event{Key: "k", Value: v, Time: int64(i)}, nil)
+	}
+	op.AdvanceTo(5000)
+	op.Advance(func(r event.Result) { got = append(got, r) })
+	if len(got) != 1 {
+		t.Fatalf("want 1 result, got %d", len(got))
+	}
+	if a, s := got[0].Avg(), got[0].StdDev(); a != 5 || s != 2 {
+		t.Fatalf("avg=%v std=%v", a, s)
+	}
+}
+
+func TestSessionMergeKeepsSumSq(t *testing.T) {
+	op := New(Config{Gap: 100, Disorder: 500})
+	for _, e := range []event.Event{{Key: "k", Value: 3, Time: 0}, {Key: "k", Value: 4, Time: 200}, {Key: "k", Value: 5, Time: 100}} {
+		op.Add(e, nil)
+	}
+	op.AdvanceTo(10000)
+	var got []event.Result
+	op.Advance(func(r event.Result) { got = append(got, r) })
+	if len(got) != 1 || got[0].SumSq != 50 {
+		t.Fatalf("%+v", got)
+	}
+}

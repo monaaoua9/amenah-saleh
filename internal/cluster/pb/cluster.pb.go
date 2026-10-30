@@ -481,6 +481,7 @@ type Result struct {
 	Min           float64                `protobuf:"fixed64,6,opt,name=min,proto3" json:"min,omitempty"`
 	Max           float64                `protobuf:"fixed64,7,opt,name=max,proto3" json:"max,omitempty"`
 	Late          bool                   `protobuf:"varint,8,opt,name=late,proto3" json:"late,omitempty"`
+	SumSq         float64                `protobuf:"fixed64,9,opt,name=sum_sq,json=sumSq,proto3" json:"sum_sq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -569,6 +570,13 @@ func (x *Result) GetLate() bool {
 		return x.Late
 	}
 	return false
+}
+
+func (x *Result) GetSumSq() float64 {
+	if x != nil {
+		return x.SumSq
+	}
+	return 0
 }
 
 type Results struct {
@@ -930,7 +938,7 @@ const file_proto_cluster_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\v2\r.dspe.v1.DataH\x00R\x04data\x12,\n" +
 	"\abarrier\x18\x03 \x01(\v2\x10.dspe.v1.BarrierH\x00R\abarrier\x12&\n" +
 	"\x05punct\x18\x04 \x01(\v2\x0e.dspe.v1.PunctH\x00R\x05punctB\x05\n" +
-	"\x03msg\"\xa2\x01\n" +
+	"\x03msg\"\xb9\x01\n" +
 	"\x06Result\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05start\x18\x02 \x01(\x03R\x05start\x12\x10\n" +
@@ -939,7 +947,8 @@ const file_proto_cluster_proto_rawDesc = "" +
 	"\x03sum\x18\x05 \x01(\x01R\x03sum\x12\x10\n" +
 	"\x03min\x18\x06 \x01(\x01R\x03min\x12\x10\n" +
 	"\x03max\x18\a \x01(\x01R\x03max\x12\x12\n" +
-	"\x04late\x18\b \x01(\bR\x04late\"4\n" +
+	"\x04late\x18\b \x01(\bR\x04late\x12\x15\n" +
+	"\x06sum_sq\x18\t \x01(\x01R\x05sumSq\"4\n" +
 	"\aResults\x12)\n" +
 	"\aresults\x18\x01 \x03(\v2\x0f.dspe.v1.ResultR\aresults\"\x1d\n" +
 	"\vSinkBarrier\x12\x0e\n" +

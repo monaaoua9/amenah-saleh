@@ -47,6 +47,7 @@ type wkey struct {
 type acc struct {
 	Count    int64
 	Sum      float64
+	SumSq    float64
 	Min, Max float64
 	Fired    bool
 }
@@ -110,6 +111,7 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 	}
 	a.Count++
 	a.Sum += e.Value
+	a.SumSq += e.Value * e.Value
 	if e.Value < a.Min {
 		a.Min = e.Value
 	}
@@ -160,7 +162,7 @@ func (o *Operator) Open() int {
 func toResult(k wkey, a *acc, size int64) event.Result {
 	return event.Result{
 		Key: k.Key, Start: k.Start, End: k.Start + size,
-		Count: a.Count, Sum: a.Sum, Min: a.Min, Max: a.Max,
+		Count: a.Count, Sum: a.Sum, SumSq: a.SumSq, Min: a.Min, Max: a.Max,
 	}
 }
 

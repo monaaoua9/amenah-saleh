@@ -1,5 +1,7 @@
 package event
 
+import "math"
+
 type Event struct {
 	Key   string  `json:"key"`
 	Value float64 `json:"value"`
@@ -16,4 +18,26 @@ type Result struct {
 	Min   float64 `json:"min"`
 	Max   float64 `json:"max"`
 	Late  bool    `json:"late,omitempty"` // refire caused by late data inside allowed lateness
+	SumSq float64 `json:"sum_sq"`
+}
+
+func (r Result) Avg() float64 {
+	if r.Count == 0 {
+		return 0
+	}
+	return r.Sum / float64(r.Count)
+}
+
+// population stddev from the running sums; clamped because the subtraction can
+// go slightly negative on near-constant data
+func (r Result) StdDev() float64 {
+	if r.Count == 0 {
+		return 0
+	}
+	n := float64(r.Count)
+	v := r.SumSq/n - (r.Sum/n)*(r.Sum/n)
+	if v <= 0 {
+		return 0
+	}
+	return math.Sqrt(v)
 }

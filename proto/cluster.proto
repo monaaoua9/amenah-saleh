@@ -61,6 +61,7 @@ message Result {
   double min = 6;
   double max = 7;
   bool late = 8;
+  double sum_sq = 9;
 }
 
 message Results {
