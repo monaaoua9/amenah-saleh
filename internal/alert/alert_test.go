@@ -91,3 +91,12 @@ func TestHookPosts(t *testing.T) {
 		t.Fatal("nothing posted")
 	}
 }
+
+func TestPercentileRule(t *testing.T) {
+	ev, got := collect([]string{"p99 > 250 key=api"}, 0)
+	ev.Write(event.Result{Key: "api-1", P99: 300})
+	ev.Write(event.Result{Key: "api-2", P99: 120})
+	if len(*got) != 1 || (*got)[0].Value != 300 {
+		t.Fatalf("%+v", *got)
+	}
+}

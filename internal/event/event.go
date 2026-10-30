@@ -45,7 +45,8 @@ func (r Result) StdDev() float64 {
 	return math.Sqrt(v)
 }
 
-// Metric picks one of count, sum, min, max, avg, stddev by name.
+// Metric picks one of count, sum, min, max, avg, stddev, p50, p95, p99 by name.
+// The percentiles are zero unless the engine runs with quantiles on.
 func (r Result) Metric(name string) (float64, bool) {
 	switch name {
 	case "count":
@@ -60,6 +61,12 @@ func (r Result) Metric(name string) (float64, bool) {
 		return r.Avg(), true
 	case "stddev":
 		return r.StdDev(), true
+	case "p50":
+		return r.P50, true
+	case "p95":
+		return r.P95, true
+	case "p99":
+		return r.P99, true
 	}
 	return 0, false
 }

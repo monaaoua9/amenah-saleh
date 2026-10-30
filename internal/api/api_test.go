@@ -109,3 +109,13 @@ func TestTopEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestTopByPercentile(t *testing.T) {
+	r := NewRecent(5)
+	r.Write(event.Result{Key: "a", P99: 10})
+	r.Write(event.Result{Key: "b", P99: 40})
+	got, ok := r.Top("p99", 1)
+	if !ok || got[0].Result.Key != "b" {
+		t.Fatalf("%+v", got)
+	}
+}

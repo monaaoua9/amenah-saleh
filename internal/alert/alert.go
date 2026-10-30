@@ -10,7 +10,7 @@ import (
 )
 
 // Rule text: "<metric> <op> <number> [key=<substring>]"
-// metric: count sum min max avg stddev    op: > >= < <= == !=
+// metric: count sum min max avg stddev p50 p95 p99    op: > >= < <= == !=
 // e.g. "avg > 80 key=cpu-"
 type Rule struct {
 	Text   string
