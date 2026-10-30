@@ -30,15 +30,24 @@ func (o *Operator) naiveAdvance(emit func(event.Result)) {
 		}
 		return
 	}
-	for k, a := range o.wins {
-		end := k.Start + o.cfg.Size
+	type victim struct {
+		ks    *keyWins
+		start int64
+	}
+	var dead []victim
+	o.each(func(key string, start int64, a *acc) {
+		k := wkey{key, start}
+		end := start + o.cfg.Size
 		if !a.Fired && end <= wm {
 			emit(toResult(k, a, o.cfg.Size))
 			a.Fired = true
 		}
 		if a.Fired && end+o.cfg.Lateness <= wm {
-			delete(o.wins, k)
+			dead = append(dead, victim{o.keys[key], start})
 		}
+	})
+	for _, v := range dead {
+		o.drop1(v.ks, v.start)
 	}
 }
 
@@ -82,6 +91,13 @@ func TestHeapAdvanceMatchesFullScan(t *testing.T) {
 				fast.Advance(func(r event.Result) { gotF = append(gotF, r) })
 				slow.naiveAdvance(func(r event.Result) { gotS = append(gotS, r) })
 
+				n := len(fast.allWins())
+				for _, l := range fast.sess {
+					n += len(l)
+				}
+				if fast.Open() != n {
+					t.Fatalf("step %d: Open()=%d but %d windows are actually held", step, fast.Open(), n)
+				}
 				if fast.Open() != slow.Open() {
 					t.Fatalf("step %d: open %d vs %d", step, fast.Open(), slow.Open())
 				}
@@ -153,6 +169,23 @@ func BenchmarkAdvanceHeap200kOpen(b *testing.B) {
 // shaped like the engine benchmark: 256 keys, time always moving, Advance per batch
 func BenchmarkAddAdvance(b *testing.B) {
 	op := New(Config{Size: 1000, Disorder: 200})
+	keys := make([]string, 256)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("k%d", i)
+	}
+	emit := func(event.Result) {}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		op.Add(event.Event{Key: keys[i&255], Value: 1, Time: int64(i)}, emit)
+		if i&511 == 511 {
+			op.Advance(emit)
+		}
+	}
+}
+
+func BenchmarkAddAdvanceSliding(b *testing.B) {
+	op := New(Config{Size: 4000, Slide: 1000, Disorder: 200}) // every event lands in 4 windows
 	keys := make([]string, 256)
 	for i := range keys {
 		keys[i] = fmt.Sprintf("k%d", i)

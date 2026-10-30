@@ -44,13 +44,13 @@ func TestSnapshotRoundTripsEverything(t *testing.T) {
 			if err := back.Restore(blob); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(op.wins, back.wins) || !reflect.DeepEqual(op.sess, back.sess) {
+			if !reflect.DeepEqual(op.allWins(), back.allWins()) || !reflect.DeepEqual(op.sess, back.sess) {
 				t.Fatal("state changed across snapshot")
 			}
 			if op.wm != back.wm || op.Late() != back.Late() {
 				t.Fatalf("wm %+v vs %+v", op.wm, back.wm)
 			}
-			if len(op.wins)+len(op.sess) == 0 {
+			if len(op.allWins())+len(op.sess) == 0 {
 				t.Fatal("test never built any state")
 			}
 			// and the restored operator behaves the same from here on
@@ -76,9 +76,9 @@ func TestOldGobSnapshotStillLoads(t *testing.T) {
 	cfg := Config{Size: 1000, Lateness: 2000, Disorder: 300, Quantiles: true}
 	op := busyOperator(cfg)
 	s := snap{WM: op.wm, Late: op.late.Load()}
-	for k, a := range op.wins {
-		s.Entries = append(s.Entries, entry{k, *a})
-	}
+	op.each(func(key string, start int64, a *acc) {
+		s.Entries = append(s.Entries, entry{wkey{key, start}, *a})
+	})
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(s); err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestOldGobSnapshotStillLoads(t *testing.T) {
 	if err := back.Restore(buf.Bytes()); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(op.wins, back.wins) {
+	if !reflect.DeepEqual(op.allWins(), back.allWins()) {
 		t.Fatal("gob snapshot restored differently")
 	}
 }
@@ -116,9 +116,9 @@ func BenchmarkSnapshot(b *testing.B) {
 	})
 	b.Run("gob", func(b *testing.B) {
 		s := snap{WM: op.wm}
-		for k, a := range op.wins {
-			s.Entries = append(s.Entries, entry{k, *a})
-		}
+		op.each(func(key string, start int64, a *acc) {
+			s.Entries = append(s.Entries, entry{wkey{key, start}, *a})
+		})
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

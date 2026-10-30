@@ -59,18 +59,19 @@ type acc struct {
 
 // Operator is single-threaded, one per worker.
 type Operator struct {
-	cfg  Config
-	wins map[wkey]*acc
-	sess map[string][]*session
-	wm   Watermark
-	late atomic.Uint64
+	cfg   Config
+	keys  map[string]*keyWins
+	nwins int
+	sess  map[string][]*session
+	wm    Watermark
+	late  atomic.Uint64
 
 	// sees every event counted as late, including implausible timestamps.
 	// Runs on the worker goroutine; set before the first Add.
 	OnLate func(event.Event)
 
-	due        map[int64][]wkey // when -> windows needing attention then
-	dueTimes   int64Heap        // each key of due once
+	due        map[int64][]ref // when -> windows needing attention then
+	dueTimes   int64Heap       // each key of due once
 	sessTimers sessHeap
 	sched      map[string]int64 // session key -> at of its live heap entry
 }
@@ -85,11 +86,11 @@ func (o *Operator) drop(e event.Event) {
 func New(cfg Config) *Operator {
 	return &Operator{
 		cfg:   cfg,
-		wins:  make(map[wkey]*acc),
+		keys:  make(map[string]*keyWins),
 		sess:  make(map[string][]*session),
 		wm:    Watermark{Disorder: cfg.Disorder},
 		sched: make(map[string]int64),
-		due:   make(map[int64][]wkey),
+		due:   make(map[int64][]ref),
 	}
 }
 
@@ -115,13 +116,14 @@ func (o *Operator) Add(e event.Event, emit func(event.Result)) {
 		rem += slide
 	}
 	start := e.Time - rem
+	ks := o.keys[e.Key] // one hash per event, however many windows it lands in
 	taken := false
 	for ; start+size > e.Time; start -= slide {
 		// older windows only end earlier, so the rest are late too
 		if start+size+o.cfg.Lateness <= wm {
 			break
 		}
-		o.addTo(wkey{e.Key, start}, e, emit)
+		ks = o.addTo(ks, e, start, emit)
 		taken = true
 	}
 	if !taken {
@@ -130,12 +132,19 @@ func (o *Operator) Add(e event.Event, emit func(event.Result)) {
 	o.wm.Observe(e.Time)
 }
 
-func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
-	a := o.wins[k]
+// ks is the key's window set, nil if it has none yet; the (possibly new) set is returned
+func (o *Operator) addTo(ks *keyWins, e event.Event, start int64, emit func(event.Result)) *keyWins {
+	var a *acc
+	if ks != nil {
+		a = ks.find(start)
+	}
 	if a == nil {
+		if ks == nil {
+			ks = o.keyFor(e.Key)
+		}
 		a = &acc{Min: e.Value, Max: e.Value}
-		o.wins[k] = a
-		o.schedule(k.Start+o.cfg.Size, k)
+		o.put(ks, start, a)
+		o.schedule(start+o.cfg.Size, ref{ks, start})
 	}
 	a.Count++
 	a.Sum += e.Value
@@ -159,10 +168,11 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 		a.Max = e.Value
 	}
 	if a.Fired {
-		r := toResult(k, a, o.cfg.Size)
+		r := toResult(wkey{e.Key, start}, a, o.cfg.Size)
 		r.Late = true
 		emit(r)
 	}
+	return ks
 }
 
 // call once per batch, not per event
@@ -176,21 +186,21 @@ func (o *Operator) Advance(emit func(event.Result)) {
 		at := heap.Pop(&o.dueTimes).(int64)
 		ks := o.due[at]
 		delete(o.due, at)
-		var wait []wkey
-		for _, k := range ks {
-			a := o.wins[k]
+		var wait []ref
+		for _, r := range ks {
+			a := r.ks.find(r.start)
 			if a == nil {
 				continue
 			}
-			end := k.Start + o.cfg.Size
+			end := r.start + o.cfg.Size
 			if !a.Fired {
-				emit(toResult(k, a, o.cfg.Size))
+				emit(toResult(wkey{r.ks.key, r.start}, a, o.cfg.Size))
 				a.Fired = true
 			}
 			if end+o.cfg.Lateness <= wm {
-				delete(o.wins, k)
+				o.drop1(r.ks, r.start)
 			} else {
-				wait = append(wait, k)
+				wait = append(wait, r)
 			}
 		}
 		// same lateness for everyone, so they all expire together
@@ -208,7 +218,7 @@ func (o *Operator) AdvanceTo(ts int64) {
 func (o *Operator) Late() uint64 { return o.late.Load() }
 
 func (o *Operator) Open() int {
-	n := len(o.wins)
+	n := o.nwins
 	for _, l := range o.sess {
 		n += len(l)
 	}
@@ -238,10 +248,10 @@ type snap struct {
 }
 
 func (o *Operator) Snapshot() ([]byte, error) {
-	s := snap{WM: o.wm, Late: o.late.Load(), Entries: make([]entry, 0, len(o.wins))}
-	for k, a := range o.wins {
-		s.Entries = append(s.Entries, entry{k, *a})
-	}
+	s := snap{WM: o.wm, Late: o.late.Load(), Entries: make([]entry, 0, o.nwins)}
+	o.each(func(key string, start int64, a *acc) {
+		s.Entries = append(s.Entries, entry{wkey{key, start}, *a})
+	})
 	for k, l := range o.sess {
 		for _, x := range l {
 			s.Sess = append(s.Sess, sessEntry{k, *x})
@@ -261,7 +271,8 @@ func (o *Operator) Restore(b []byte) error {
 // of data we might still receive. Costs: after a rescale a very late event
 // can be accepted that an unscaled run would have dropped.
 func (o *Operator) RestoreMerge(blobs [][]byte, keep func(key string) bool) error {
-	o.wins = make(map[wkey]*acc)
+	o.keys = make(map[string]*keyWins)
+	o.nwins = 0
 	o.sess = make(map[string][]*session)
 	o.late.Store(0)
 
@@ -274,7 +285,7 @@ func (o *Operator) RestoreMerge(blobs [][]byte, keep func(key string) bool) erro
 		for _, e := range s.Entries {
 			if keep == nil || keep(e.K.Key) {
 				a := e.A
-				o.wins[e.K] = &a
+				o.put(o.keyFor(e.K.Key), e.K.Start, &a)
 			}
 		}
 		for _, e := range s.Sess {

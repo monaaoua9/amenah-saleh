@@ -23,7 +23,7 @@ func (h *int64Heap) Pop() any {
 	return t
 }
 
-func (o *Operator) schedule(at int64, ks ...wkey) {
+func (o *Operator) schedule(at int64, ks ...ref) {
 	if _, ok := o.due[at]; !ok {
 		heap.Push(&o.dueTimes, at)
 	}
@@ -50,16 +50,18 @@ func (h *sessHeap) Pop() any {
 }
 
 func (o *Operator) rebuildTimers() {
-	o.due = make(map[int64][]wkey)
+	o.due = make(map[int64][]ref)
 	o.dueTimes = o.dueTimes[:0]
 	o.sessTimers = o.sessTimers[:0]
 	o.sched = make(map[string]int64)
-	for k, a := range o.wins {
-		end := k.Start + o.cfg.Size
-		if a.Fired {
-			o.schedule(end+o.cfg.Lateness, k)
-		} else {
-			o.schedule(end, k)
+	for _, ks := range o.keys {
+		for _, s := range ks.w {
+			end := s.start + o.cfg.Size
+			if s.a.Fired {
+				o.schedule(end+o.cfg.Lateness, ref{ks, s.start})
+			} else {
+				o.schedule(end, ref{ks, s.start})
+			}
 		}
 	}
 
