@@ -103,6 +103,31 @@ worker count changed). A lost stream cancels the engine; the supervisor in
 `cmd/engine` stops it, waits for the nodes to be back, and starts a new one
 that restores from the last checkpoint.
 
+## Around the engine
+
+Everything below sits outside the exactly-once core and is wired in
+`cmd/engine`.
+
+- **Ingest side** (`internal/ingest`, `internal/filter`): the rate limiter and the
+  filter run after a batch is read and before it is submitted. A filtered event
+  still counts as received in the ack (`LastSeq` is taken before filtering),
+  otherwise the producer would keep it in its replay buffer forever. The filter
+  is deterministic, so replays drop the same events.
+- **Quantiles** (`internal/sketch`): a log-bucket sketch per window with 2%
+  relative error. It merges, which is what session bridging needs, and it is
+  gob-encoded inside the window snapshot, so it is checkpointed and rescaled
+  like the other aggregates. Off by default; the per-event cost is a `log`.
+- **Outputs** (`internal/output`): sinks hang off `OnResult`, so they only see
+  results after the checkpoint is durable. The webhook retries 5xx; receivers
+  dedup on (key, start) because of the at-least-once case below. The late-event
+  side output is called from the worker goroutines and is at-least-once, replay
+  after a crash can report the same event again.
+- **Alerts** (`internal/alert`): evaluated on emitted results. Cooldown is in
+  event time (the result's end), so a replay of the same file alerts the same
+  way as the live run.
+- **Checkpoint compression**: `Put` writes `task.snap.gz`, `Get` tries `.snap`
+  first and then `.snap.gz`, so flipping `-ckgzip` between restarts is safe.
+
 ## Known gaps
 
 - Sink output is staged inside the checkpoint and re-sent on restore if the

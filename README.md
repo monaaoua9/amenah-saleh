@@ -28,7 +28,10 @@ separate worker processes. Both modes run the same worker code.
 | **Exactly-once** | Restore from the last checkpoint, producers replay, lanes drop already-seen `Seq`. Output is staged inside the checkpoint and released only after it is durable. |
 | **Rescaling** | Restore into a different number of lanes and workers. State is split by key group (128 groups, workers own ranges). |
 | **Cluster mode** | Window workers run as separate processes that dial a master. A lost node is detected, a replacement is awaited, everyone is restored from the last checkpoint. |
-| **Observability** | Prometheus text endpoint, `pprof`, a lock-free latency histogram. |
+| **Aggregates** | Count, sum, min, max, mean and stddev per window; optional p50/p95/p99 from a mergeable relative-error sketch (`-quantiles`). |
+| **Outputs** | Rolling JSONL file, batched webhook with retry, late-event side output, alert rules with cooldown. |
+| **Ingest control** | Per-producer rate limit, event filter expressions, bearer-token auth and TLS. |
+| **Observability** | Prometheus text endpoint, `pprof`, a lock-free latency histogram, and a small HTTP API (recent results, top keys, stats, health). |
 
 How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -54,6 +57,15 @@ Useful flags (`go run ./cmd/engine -h` for all of them):
 | `-shed` | reject instead of stalling when full |
 | `-ckdir`, `-ckevery`, `-maxpending` | checkpoint directory, interval, and the staged-output size that forces an early checkpoint |
 | `-metrics :9090`, `-pprof :6060` | Prometheus text at `/metrics`; profiling |
+| `-http :8080` | JSON API: `/results?key=`, `/top?by=p99&n=10`, `/stats`, `/healthz`, `/readyz`, `/metrics` |
+| `-out`, `-outmax`, `-webhook`, `-latefile` | append results as JSON lines (rolling), POST batches, log dropped-late events |
+| `-quantiles` | add p50, p95, p99 to every window result |
+| `-filter` | drop events at ingest, e.g. `value >= 0 && key ~ 'sensor-'` |
+| `-rate` | per-producer events/sec cap |
+| `-alert`, `-alertcooldown`, `-alerthook` | rules like `avg > 80 key=cpu-; p99 > 250`, quiet period in event time, optional webhook |
+| `-token`, `-tls-cert`, `-tls-key` | shared bearer token and TLS for ingest and worker streams |
+| `-ckgzip` | gzip checkpoint snapshots |
+| `-config file.json` | any flag as a JSON key; the command line wins |
 
 ## Cluster demo
 
@@ -96,6 +108,18 @@ go run ./cmd/engine -role worker -master localhost:7070   # start three of these
 go run ./cmd/loadgen -c 4 -d 20s                          # producers
 ```
 
+## Feeding it a file
+
+```
+go run ./cmd/engine -http :8080 -quantiles -alert 'p99 > 250 key=api-'
+go run ./cmd/replay -speed 10 events.csv     # key,value,time_ms; or .jsonl
+curl 'localhost:8080/top?by=p99&n=5'
+```
+
+`-speed 1` replays at the pace of the event timestamps, `0` (default) goes as
+fast as the engine accepts. With `-token` or `-tls-cert` set on the server, pass
+`-token` and `-tls`/`-ca` to `replay` and `loadgen`.
+
 ## Guarantees and how they're checked
 
 These are tests, not claims. Each compares the output with an uninterrupted
@@ -135,7 +159,8 @@ the benchmark's own key formatting; the commit that fixed it has the details.
 
 - The master is a single point of failure and there is no leader election.
 - Recovery is a full rollback to the last checkpoint, not a per-worker restart.
-- Worker streams are plaintext gRPC without authentication.
+- Auth is one shared bearer token; TLS is server-side only (no client certificates).
+- `-latefile` only sees events dropped by in-process workers, not remote ones.
 - A crash between the sink emit and its marker re-sends that one epoch:
   at-least-once for it, and downstream can dedup on (key, window start).
 - After a rescale the watermark restarts at the slowest old worker's, so a very
@@ -150,6 +175,7 @@ the benchmark's own key formatting; the commit that fixed it has the details.
 ```
 cmd/engine          server: standalone | master | worker
 cmd/loadgen         gRPC load generator (uses ingest.Producer)
+cmd/replay          feed a CSV or JSONL file through a producer
 internal/engine     lanes, workers, aligned barriers, sink, credits, remote workers
 internal/window     tumbling / sliding / session operator, watermark, snapshots
 internal/checkpoint snapshot store and ack coordinator
@@ -157,6 +183,14 @@ internal/cluster    master-side registry of worker nodes
 internal/ingest     gRPC ingest service, client, reconnecting Producer
 internal/partition  Hash (key groups) and RoundRobin
 internal/metrics    latency histogram
+internal/sketch     quantile sketch
+internal/output     JSONL file and webhook sinks
+internal/api        HTTP API and recent-results ring
+internal/alert      alert rules
+internal/filter     ingest filter expressions
+internal/security   token auth and TLS
+internal/config     JSON config loader
+internal/replay     file readers and pacing for cmd/replay
 proto/              wire definitions (make proto regenerates the Go code)
 ```
 

@@ -16,6 +16,12 @@ node:
 demo:
 	bash scripts/demo.sh
 
+replay:
+	go run ./cmd/replay $(FILE)
+
+build:
+	go build -o bin/ ./cmd/...
+
 stress:
 	go run ./cmd/loadgen -d 10s -c 4
 
