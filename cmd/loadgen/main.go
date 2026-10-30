@@ -13,6 +13,7 @@ import (
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/ingest"
 	"github.com/monaaoua9/amenah-saleh/internal/metrics"
+	"github.com/monaaoua9/amenah-saleh/internal/security"
 )
 
 func main() {
@@ -22,7 +23,15 @@ func main() {
 	dur := flag.Duration("d", 10*time.Second, "run time")
 	keys := flag.Int("keys", 1000, "distinct keys")
 	jitter := flag.Int64("jitter", 300, "event time jitter, ms")
+	token := flag.String("token", "", "bearer token the server expects")
+	tlsOn := flag.Bool("tls", false, "connect with TLS")
+	ca := flag.String("ca", "", "CA or self-signed cert to trust (implies -tls)")
 	flag.Parse()
+
+	dialOpts, err := security.DialOptions(*token, *tlsOn, *ca)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var sent atomic.Uint64
 	var rtt metrics.Histogram
@@ -35,7 +44,7 @@ func main() {
 		wg.Add(1)
 		go func(p int) {
 			defer wg.Done()
-			prod := ingest.NewProducer(*addr, fmt.Sprintf("p%d", p), grpcInsecure())
+			prod := ingest.NewProducer(*addr, fmt.Sprintf("p%d", p), dialOpts...)
 			defer prod.Close()
 
 			rng := rand.New(rand.NewSource(int64(p)))

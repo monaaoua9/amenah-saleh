@@ -21,6 +21,7 @@ import (
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/ingest"
 	"github.com/monaaoua9/amenah-saleh/internal/output"
+	"github.com/monaaoua9/amenah-saleh/internal/security"
 	"github.com/monaaoua9/amenah-saleh/internal/window"
 )
 
@@ -75,6 +76,9 @@ func main() {
 	webhook := flag.String("webhook", "", "POST result batches to this url")
 	httpAddr := flag.String("http", "", "http api (/results, /stats, /healthz, /readyz, /metrics), off when empty")
 	rate := flag.Float64("rate", 0, "per-producer limit, events/sec, 0 = off")
+	token := flag.String("token", "", "require this bearer token on every rpc; workers must pass the same")
+	tlsCert := flag.String("tls-cert", "", "serve grpc over TLS (with -tls-key); workers: trust this cert")
+	tlsKey := flag.String("tls-key", "", "TLS private key")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -87,7 +91,11 @@ func main() {
 	defer stop()
 
 	if *role == "worker" {
-		runWorker(ctx, *masterAddr)
+		dopts, err := security.DialOptions(*token, *tlsCert != "", *tlsCert)
+		if err != nil {
+			log.Fatal(err)
+		}
+		runWorker(ctx, *masterAddr, dopts)
 		return
 	}
 
@@ -116,7 +124,11 @@ func main() {
 	}
 
 	cur := &current{}
-	g := grpc.NewServer(grpc.MaxRecvMsgSize(engine.MaxMsgSize), grpc.MaxSendMsgSize(engine.MaxMsgSize))
+	secOpts, err := security.ServerOptions(*token, *tlsCert, *tlsKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g := grpc.NewServer(append(secOpts, grpc.MaxRecvMsgSize(engine.MaxMsgSize), grpc.MaxSendMsgSize(engine.MaxMsgSize))...)
 	is := ingest.NewServer(cur, *shed)
 	if *rate > 0 {
 		is.WithRate(*rate, int(*rate)) // one second of burst
@@ -202,10 +214,10 @@ func serve(ctx context.Context, eng *engine.Engine, out *atomic.Uint64) bool {
 	}
 }
 
-func runWorker(ctx context.Context, master string) {
+func runWorker(ctx context.Context, master string, dopts []grpc.DialOption) {
 	for ctx.Err() == nil {
 		log.Printf("connecting to master %s", master)
-		if err := engine.RunWorkerNode(ctx, master); err != nil {
+		if err := engine.RunWorkerNode(ctx, master, dopts...); err != nil {
 			log.Printf("worker stream ended: %v", err)
 		}
 		select {

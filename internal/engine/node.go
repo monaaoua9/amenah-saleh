@@ -17,11 +17,12 @@ import (
 // RunWorkerNode connects to a master and runs one worker until the stream
 // ends. The master decides which worker we are and what state we start with,
 // so a restarted node needs nothing locally. Returns nil when ctx is cancelled.
-func RunWorkerNode(ctx context.Context, master string) error {
-	cc, err := grpc.NewClient(master,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMsgSize), grpc.MaxCallSendMsgSize(MaxMsgSize)),
-	)
+func RunWorkerNode(ctx context.Context, master string, opts ...grpc.DialOption) error {
+	if len(opts) == 0 {
+		opts = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	}
+	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMsgSize), grpc.MaxCallSendMsgSize(MaxMsgSize)))
+	cc, err := grpc.NewClient(master, opts...)
 	if err != nil {
 		return err
 	}
