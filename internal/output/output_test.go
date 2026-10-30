@@ -116,3 +116,18 @@ func TestWebhookDropsOn4xx(t *testing.T) {
 		t.Fatalf("calls=%d failed=%d", calls.Load(), w.Failed())
 	}
 }
+
+func TestFileFlushesWithoutClose(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "o.jsonl")
+	f, _ := NewFile(p, 0)
+	defer f.Close()
+	f.Write(event.Result{Key: "a"})
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if st, err := os.Stat(p); err == nil && st.Size() > 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("result never reached the file")
+}

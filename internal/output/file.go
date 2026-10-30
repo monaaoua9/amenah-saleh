@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 )
@@ -20,13 +21,17 @@ type File struct {
 	w    *bufio.Writer
 	size int64
 	n    int
+
+	stop chan struct{}
+	done chan struct{}
 }
 
 func NewFile(path string, maxBytes int64) (*File, error) {
-	f := &File{path: path, maxBytes: maxBytes}
+	f := &File{path: path, maxBytes: maxBytes, stop: make(chan struct{}), done: make(chan struct{})}
 	if err := f.open(); err != nil {
 		return nil, err
 	}
+	go f.flushLoop()
 	return f, nil
 }
 
@@ -74,7 +79,26 @@ func (f *File) Flush() error {
 	return f.f.Sync()
 }
 
+// without this a quiet stream leaves its last results sitting in the buffer
+func (f *File) flushLoop() {
+	defer close(f.done)
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-f.stop:
+			return
+		case <-t.C:
+			f.mu.Lock()
+			f.w.Flush()
+			f.mu.Unlock()
+		}
+	}
+}
+
 func (f *File) Close() error {
+	close(f.stop)
+	<-f.done
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.w.Flush()
