@@ -89,6 +89,7 @@ func main() {
 	alertHook := flag.String("alerthook", "", "POST alerts as JSON to this url (they are always logged)")
 	ckGzip := flag.Bool("ckgzip", false, "gzip checkpoint snapshots")
 	lateFile := flag.String("latefile", "", "append events dropped as too late to this JSONL file (standalone only)")
+	quantiles := flag.Bool("quantiles", false, "report p50/p95/p99 per window (uses more memory)")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -168,7 +169,7 @@ func main() {
 	}
 	base := engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
-		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder, MaxJump: *maxJump},
+		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder, MaxJump: *maxJump, Quantiles: *quantiles},
 		CheckpointDir: *dir, CheckpointEvery: *every, CheckpointCompress: *ckGzip, MaxPending: *maxPending,
 		OnResult: output.Fanout(sinks...),
 		OnLate:   onLate,

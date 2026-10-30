@@ -19,6 +19,9 @@ type Result struct {
 	Max   float64 `json:"max"`
 	Late  bool    `json:"late,omitempty"` // refire caused by late data inside allowed lateness
 	SumSq float64 `json:"sum_sq"`
+	P50   float64 `json:"p50,omitempty"` // only when window.Config.Quantiles is on
+	P95   float64 `json:"p95,omitempty"`
+	P99   float64 `json:"p99,omitempty"`
 }
 
 func (r Result) Avg() float64 {

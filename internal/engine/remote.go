@@ -110,7 +110,7 @@ func (r *remoteWorker) recvLoop(ctx context.Context) {
 		case *cpb.FromWorker_Results:
 			out := make([]event.Result, len(x.Results.Results))
 			for i, p := range x.Results.Results {
-				out[i] = event.Result{Key: p.Key, Start: p.Start, End: p.End, Count: p.Count, Sum: p.Sum, Min: p.Min, Max: p.Max, Late: p.Late, SumSq: p.SumSq}
+				out[i] = event.Result{Key: p.Key, Start: p.Start, End: p.End, Count: p.Count, Sum: p.Sum, Min: p.Min, Max: p.Max, Late: p.Late, SumSq: p.SumSq, P50: p.P50, P95: p.P95, P99: p.P99}
 			}
 			if !sink(sinkMsg{from: r.id, results: out}) {
 				return

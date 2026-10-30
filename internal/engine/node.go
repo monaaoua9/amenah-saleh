@@ -111,7 +111,7 @@ func (s *streamEnv) sink(_ context.Context, m sinkMsg) {
 	}
 	out := make([]*cpb.Result, len(m.results))
 	for i, r := range m.results {
-		out[i] = &cpb.Result{Key: r.Key, Start: r.Start, End: r.End, Count: r.Count, Sum: r.Sum, Min: r.Min, Max: r.Max, Late: r.Late, SumSq: r.SumSq}
+		out[i] = &cpb.Result{Key: r.Key, Start: r.Start, End: r.End, Count: r.Count, Sum: r.Sum, Min: r.Min, Max: r.Max, Late: r.Late, SumSq: r.SumSq, P50: r.P50, P95: r.P95, P99: r.P99}
 	}
 	s.send(&cpb.FromWorker{Msg: &cpb.FromWorker_Results{Results: &cpb.Results{Results: out}}})
 }

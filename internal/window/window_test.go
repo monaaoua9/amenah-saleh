@@ -220,3 +220,77 @@ func TestOnLateSeesEveryDrop(t *testing.T) {
 		t.Fatalf("counter %d", op.Late())
 	}
 }
+
+func fire(op *Operator, ts int64) []event.Result {
+	var out []event.Result
+	op.AdvanceTo(ts)
+	op.Advance(func(r event.Result) { out = append(out, r) })
+	return out
+}
+
+func TestQuantilesOffByDefault(t *testing.T) {
+	op := New(Config{Size: 1000})
+	op.Add(event.Event{Key: "k", Value: 42, Time: 1}, nil)
+	r := fire(op, 5000)
+	if len(r) != 1 || r[0].P50 != 0 || r[0].P99 != 0 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestQuantilesPerWindow(t *testing.T) {
+	op := New(Config{Size: 1000, Quantiles: true})
+	for v := 1; v <= 100; v++ {
+		op.Add(event.Event{Key: "k", Value: float64(v), Time: int64(v)}, nil)
+	}
+	r := fire(op, 5000)
+	if len(r) != 1 {
+		t.Fatalf("%+v", r)
+	}
+	near := func(got, want float64) bool { return got > want*0.97 && got < want*1.03 }
+	if !near(r[0].P50, 50) || !near(r[0].P95, 95) || !near(r[0].P99, 99) {
+		t.Fatalf("p50=%v p95=%v p99=%v", r[0].P50, r[0].P95, r[0].P99)
+	}
+}
+
+func TestQuantilesSurviveSnapshotAndSessionMerge(t *testing.T) {
+	cfg := Config{Gap: 100, Disorder: 500, Quantiles: true}
+	op := New(cfg)
+	for _, e := range []event.Event{{Key: "k", Value: 10, Time: 0}, {Key: "k", Value: 30, Time: 200}} {
+		op.Add(e, nil)
+	}
+	b, err := op.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	op2 := New(cfg)
+	if err := op2.Restore(b); err != nil {
+		t.Fatal(err)
+	}
+	op2.Add(event.Event{Key: "k", Value: 20, Time: 100}, nil) // bridges the two sessions
+
+	r := fire(op2, 10000)
+	if len(r) != 1 || r[0].Count != 3 {
+		t.Fatalf("%+v", r)
+	}
+	if p := r[0].P50; p < 19 || p > 21 {
+		t.Fatalf("median %v, want ~20", p)
+	}
+}
+
+func TestSlidingWindowsEachGetOwnSketch(t *testing.T) {
+	op := New(Config{Size: 2000, Slide: 1000, Quantiles: true})
+	op.Add(event.Event{Key: "k", Value: 1, Time: 500}, nil)
+	op.Add(event.Event{Key: "k", Value: 100, Time: 1500}, nil)
+	rs := fire(op, 10000)
+	byStart := map[int64]event.Result{}
+	for _, r := range rs {
+		byStart[r.Start] = r
+	}
+	// window [0,2000) holds both, [1000,3000) only the 100, [-1000,1000) only the 1
+	if r := byStart[1000]; r.Count != 1 || r.P50 < 97 {
+		t.Fatalf("[1000,3000): %+v", r)
+	}
+	if r := byStart[-1000]; r.Count != 1 || r.P50 > 1.03 {
+		t.Fatalf("[-1000,1000): %+v", r)
+	}
+}

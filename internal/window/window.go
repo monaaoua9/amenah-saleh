@@ -7,15 +7,17 @@ import (
 	"sync/atomic"
 
 	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/sketch"
 )
 
 type Config struct {
-	Size     int64 // ms
-	Slide    int64 // ms, 0 means tumbling (slide == size)
-	Gap      int64 // ms of silence that closes a session; > 0 switches to session windows
-	Lateness int64 // ms a fired window is kept around for stragglers
-	Disorder int64 // ms, feeds the watermark
-	MaxJump  int64 // ms, an event further ahead of the watermark base than this is dropped; 0 = unlimited
+	Size      int64 // ms
+	Slide     int64 // ms, 0 means tumbling (slide == size)
+	Gap       int64 // ms of silence that closes a session; > 0 switches to session windows
+	Lateness  int64 // ms a fired window is kept around for stragglers
+	Disorder  int64 // ms, feeds the watermark
+	MaxJump   int64 // ms, an event further ahead of the watermark base than this is dropped; 0 = unlimited
+	Quantiles bool  // keep a sketch per window and report p50/p95/p99 (costs memory and some throughput)
 }
 
 // anything outside this is a bad clock or a hostile producer; it would also
@@ -50,6 +52,7 @@ type acc struct {
 	SumSq    float64
 	Min, Max float64
 	Fired    bool
+	Q        *sketch.Sketch
 }
 
 // Operator is single-threaded, one per worker.
@@ -123,6 +126,12 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 	a.Count++
 	a.Sum += e.Value
 	a.SumSq += e.Value * e.Value
+	if o.cfg.Quantiles {
+		if a.Q == nil {
+			a.Q = sketch.New()
+		}
+		a.Q.Add(e.Value)
+	}
 	if e.Value < a.Min {
 		a.Min = e.Value
 	}
@@ -171,10 +180,12 @@ func (o *Operator) Open() int {
 }
 
 func toResult(k wkey, a *acc, size int64) event.Result {
-	return event.Result{
+	r := event.Result{
 		Key: k.Key, Start: k.Start, End: k.Start + size,
 		Count: a.Count, Sum: a.Sum, SumSq: a.SumSq, Min: a.Min, Max: a.Max,
 	}
+	r.P50, r.P95, r.P99 = quantiles(a)
+	return r
 }
 
 type entry struct {
@@ -249,4 +260,11 @@ func (o *Operator) RestoreMerge(blobs [][]byte, keep func(key string) bool) erro
 	wm.Disorder = o.cfg.Disorder
 	o.wm = wm
 	return nil
+}
+
+func quantiles(a *acc) (p50, p95, p99 float64) {
+	if a.Q == nil {
+		return
+	}
+	return a.Q.Quantile(0.5), a.Q.Quantile(0.95), a.Q.Quantile(0.99)
 }

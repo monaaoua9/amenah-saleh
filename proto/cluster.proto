@@ -13,6 +13,7 @@ message WindowConfig {
   int64 lateness = 4;
   int64 disorder = 5;
   int64 max_jump = 6;
+  bool quantiles = 7;
 }
 
 // First message on every stream. Snapshots are only set when restoring: just
@@ -62,6 +63,9 @@ message Result {
   double max = 7;
   bool late = 8;
   double sum_sq = 9;
+  double p50 = 10;
+  double p95 = 11;
+  double p99 = 12;
 }
 
 message Results {

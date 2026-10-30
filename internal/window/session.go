@@ -1,6 +1,9 @@
 package window
 
-import "github.com/monaaoua9/amenah-saleh/internal/event"
+import (
+	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/amenah-saleh/internal/sketch"
+)
 
 type session struct {
 	Start, End int64 // End = last event + gap
@@ -15,6 +18,10 @@ func (o *Operator) addSession(e event.Event) {
 	}
 
 	ns := &session{Start: e.Time, End: e.Time + gap, A: acc{Count: 1, Sum: e.Value, SumSq: e.Value * e.Value, Min: e.Value, Max: e.Value}}
+	if o.cfg.Quantiles {
+		ns.A.Q = sketch.New()
+		ns.A.Q.Add(e.Value)
+	}
 	var keep []*session
 	for _, s := range o.sess[e.Key] {
 		if s.Start > ns.End || ns.Start > s.End {
@@ -29,6 +36,12 @@ func (o *Operator) addSession(e event.Event) {
 		ns.A.SumSq += s.A.SumSq
 		ns.A.Min = min(ns.A.Min, s.A.Min)
 		ns.A.Max = max(ns.A.Max, s.A.Max)
+		if s.A.Q != nil {
+			if ns.A.Q == nil {
+				ns.A.Q = sketch.New()
+			}
+			ns.A.Q.Merge(s.A.Q)
+		}
 	}
 	o.sess[e.Key] = append(keep, ns)
 	o.wm.Observe(e.Time)
@@ -43,10 +56,12 @@ func (o *Operator) advanceSessions(emit func(event.Result)) {
 				keep = append(keep, s)
 				continue
 			}
-			emit(event.Result{
+			r := event.Result{
 				Key: k, Start: s.Start, End: s.End,
 				Count: s.A.Count, Sum: s.A.Sum, SumSq: s.A.SumSq, Min: s.A.Min, Max: s.A.Max,
-			})
+			}
+			r.P50, r.P95, r.P99 = quantiles(&s.A)
+			emit(r)
 		}
 		if len(keep) == 0 {
 			delete(o.sess, k)

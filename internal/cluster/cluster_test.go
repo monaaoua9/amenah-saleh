@@ -269,3 +269,57 @@ func TestRemoteRescale(t *testing.T) {
 
 	same(t, got, want)
 }
+
+// quantiles, sum of squares and window config all have to cross the wire
+func TestRemoteCarriesQuantilesAndSumSq(t *testing.T) {
+	evs := gen(3000)
+	withQ := func(c *engine.Config) { c.Window.Quantiles = true }
+
+	local := newCollector()
+	lc := cfg(t.TempDir(), local)
+	withQ(&lc)
+	le := engine.New(lc)
+	if err := le.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, le, evs)
+	finish(t, le)
+	le.Stop()
+
+	hub, addr := startMaster(t)
+	for range 3 {
+		defer startNode(addr)()
+	}
+	got := newCollector()
+	rc := cfg(t.TempDir(), got)
+	withQ(&rc)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conns, err := hub.Wait(ctx, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.Remote = conns
+	re := engine.New(rc)
+	if err := re.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	feed(t, re, evs)
+	finish(t, re)
+	re.Stop()
+
+	if got.n != local.n || got.n == 0 {
+		t.Fatalf("remote %d results, local %d", got.n, local.n)
+	}
+	for k, w := range local.res {
+		g := got.res[k]
+		if g.SumSq != w.SumSq || g.P50 != w.P50 || g.P95 != w.P95 || g.P99 != w.P99 {
+			t.Fatalf("window %s: remote %+v local %+v", k, g, w)
+		}
+	}
+	for _, r := range got.res {
+		if r.P99 == 0 && r.Max > 0 {
+			t.Fatalf("quantiles missing: %+v", r)
+		}
+	}
+}
