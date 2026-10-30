@@ -19,6 +19,7 @@ import (
 	"github.com/monaaoua9/amenah-saleh/internal/engine"
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/ingest"
+	"github.com/monaaoua9/amenah-saleh/internal/output"
 	"github.com/monaaoua9/amenah-saleh/internal/window"
 )
 
@@ -66,6 +67,9 @@ func main() {
 	dir := flag.String("ckdir", "./checkpoints", "checkpoint dir")
 	every := flag.Duration("ckevery", 5*time.Second, "checkpoint interval")
 	maxPending := flag.Int("maxpending", 100000, "staged results that trigger an early checkpoint, 0 = off")
+	outPath := flag.String("out", "", "append results as JSON lines to this file")
+	outMax := flag.Int64("outmax", 64<<20, "roll the -out file after this many bytes, 0 = never")
+	webhook := flag.String("webhook", "", "POST result batches to this url")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -83,11 +87,25 @@ func main() {
 	}
 
 	var out atomic.Uint64
+	sinks := []output.Sink{output.Func(func(event.Result) { out.Add(1) })}
+	if *outPath != "" {
+		f, err := output.NewFile(*outPath, *outMax)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		sinks = append(sinks, f)
+	}
+	if *webhook != "" {
+		wh := output.NewWebhook(*webhook, 500, time.Second)
+		defer wh.Close()
+		sinks = append(sinks, wh)
+	}
 	base := engine.Config{
 		Lanes: *lanes, Workers: *workers, MaxInflight: *inflight,
 		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder, MaxJump: *maxJump},
 		CheckpointDir: *dir, CheckpointEvery: *every, MaxPending: *maxPending,
-		OnResult: func(r event.Result) { out.Add(1) },
+		OnResult: output.Fanout(sinks...),
 	}
 
 	cur := &current{}
