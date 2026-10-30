@@ -2,6 +2,7 @@ package window
 
 import (
 	"bytes"
+	"container/heap"
 	"encoding/gob"
 	"errors"
 	"sync/atomic"
@@ -69,6 +70,10 @@ type Operator struct {
 	// sees every event counted as late, including implausible timestamps.
 	// Runs on the worker goroutine; set before the first Add.
 	OnLate func(event.Event)
+
+	timers     timerHeap
+	sessTimers sessHeap
+	sched      map[string]int64 // session key -> at of its live heap entry
 }
 
 func (o *Operator) drop(e event.Event) {
@@ -80,10 +85,11 @@ func (o *Operator) drop(e event.Event) {
 
 func New(cfg Config) *Operator {
 	return &Operator{
-		cfg:  cfg,
-		wins: make(map[wkey]*acc),
-		sess: make(map[string][]*session),
-		wm:   Watermark{Disorder: cfg.Disorder},
+		cfg:   cfg,
+		wins:  make(map[wkey]*acc),
+		sess:  make(map[string][]*session),
+		wm:    Watermark{Disorder: cfg.Disorder},
+		sched: make(map[string]int64),
 	}
 }
 
@@ -125,6 +131,7 @@ func (o *Operator) addTo(k wkey, e event.Event, emit func(event.Result)) {
 	if a == nil {
 		a = &acc{Min: e.Value, Max: e.Value}
 		o.wins[k] = a
+		heap.Push(&o.timers, timer{k.Start + o.cfg.Size, k})
 	}
 	a.Count++
 	a.Sum += e.Value
@@ -161,14 +168,21 @@ func (o *Operator) Advance(emit func(event.Result)) {
 		return
 	}
 	wm := o.wm.Current()
-	for k, a := range o.wins {
-		end := k.Start + o.cfg.Size
-		if !a.Fired && end <= wm {
-			emit(toResult(k, a, o.cfg.Size))
+	for len(o.timers) > 0 && o.timers[0].at <= wm {
+		t := heap.Pop(&o.timers).(timer)
+		a := o.wins[t.k]
+		if a == nil {
+			continue
+		}
+		end := t.k.Start + o.cfg.Size
+		if !a.Fired {
+			emit(toResult(t.k, a, o.cfg.Size))
 			a.Fired = true
 		}
-		if a.Fired && end+o.cfg.Lateness <= wm {
-			delete(o.wins, k)
+		if end+o.cfg.Lateness <= wm {
+			delete(o.wins, t.k)
+		} else {
+			heap.Push(&o.timers, timer{end + o.cfg.Lateness, t.k})
 		}
 	}
 }
@@ -269,6 +283,7 @@ func (o *Operator) RestoreMerge(blobs [][]byte, keep func(key string) bool) erro
 	}
 	wm.Disorder = o.cfg.Disorder
 	o.wm = wm
+	o.rebuildTimers()
 	return nil
 }
 

@@ -1,6 +1,8 @@
 package window
 
 import (
+	"container/heap"
+
 	"github.com/monaaoua9/amenah-saleh/internal/event"
 	"github.com/monaaoua9/amenah-saleh/internal/hll"
 	"github.com/monaaoua9/amenah-saleh/internal/sketch"
@@ -55,12 +57,19 @@ func (o *Operator) addSession(e event.Event) {
 		}
 	}
 	o.sess[e.Key] = append(keep, ns)
+	o.scheduleSession(e.Key)
 	o.wm.Observe(e.Time)
 }
 
 func (o *Operator) advanceSessions(emit func(event.Result)) {
 	wm := o.wm.Current()
-	for k, list := range o.sess {
+	for len(o.sessTimers) > 0 && o.sessTimers[0].at <= wm {
+		t := heap.Pop(&o.sessTimers).(sessTimer)
+		if cur, ok := o.sched[t.key]; !ok || cur != t.at {
+			continue // superseded by an earlier entry
+		}
+		delete(o.sched, t.key)
+		k, list := t.key, o.sess[t.key]
 		keep := list[:0]
 		for _, s := range list {
 			if s.End > wm {
@@ -80,6 +89,7 @@ func (o *Operator) advanceSessions(emit func(event.Result)) {
 		} else {
 			o.sess[k] = keep
 		}
+		o.scheduleSession(k)
 	}
 }
 
