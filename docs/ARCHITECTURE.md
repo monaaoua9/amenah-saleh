@@ -117,6 +117,9 @@ Everything below sits outside the exactly-once core and is wired in
   relative error. It merges, which is what session bridging needs, and it is
   gob-encoded inside the window snapshot, so it is checkpointed and rescaled
   like the other aggregates. Off by default; the per-event cost is a `log`.
+- **Distinct count** (`internal/hll`): 1 KiB of registers per open window, merged
+  by register max, so sessions and snapshots treat it like the quantile sketch.
+  It counts distinct *values* (window state is already per key). Off by default.
 - **Outputs** (`internal/output`): sinks hang off `OnResult`, so they only see
   results after the checkpoint is durable. The webhook retries 5xx; receivers
   dedup on (key, start) because of the at-least-once case below. The late-event

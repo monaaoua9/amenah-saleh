@@ -1,3 +1,4 @@
+| `-distinct` | add an approximate distinct-value count (HyperLogLog, ~3%) to every window result |
 # AMENAH SALEH — Distributed Stream Processing Engine
 
 [![ci](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml)
@@ -28,7 +29,7 @@ separate worker processes. Both modes run the same worker code.
 | **Exactly-once** | Restore from the last checkpoint, producers replay, lanes drop already-seen `Seq`. Output is staged inside the checkpoint and released only after it is durable. |
 | **Rescaling** | Restore into a different number of lanes and workers. State is split by key group (128 groups, workers own ranges). |
 | **Cluster mode** | Window workers run as separate processes that dial a master. A lost node is detected, a replacement is awaited, everyone is restored from the last checkpoint. |
-| **Aggregates** | Count, sum, min, max, mean and stddev per window; optional p50/p95/p99 from a mergeable relative-error sketch (`-quantiles`). |
+| **Aggregates** | Count, sum, min, max, mean and stddev per window; optional p50/p95/p99 from a mergeable relative-error sketch (`-quantiles`) and distinct values (`-distinct`). |
 | **Outputs** | Rolling JSONL file, batched webhook with retry, late-event side output, alert rules with cooldown. |
 | **Ingest control** | Per-producer rate limit, event filter expressions, bearer-token auth and TLS. |
 | **Observability** | Prometheus text endpoint, `pprof`, a lock-free latency histogram, and a small HTTP API (recent results, top keys, stats, health). |
@@ -184,6 +185,7 @@ internal/ingest     gRPC ingest service, client, reconnecting Producer
 internal/partition  Hash (key groups) and RoundRobin
 internal/metrics    latency histogram
 internal/sketch     quantile sketch
+internal/hll        HyperLogLog
 internal/output     JSONL file and webhook sinks
 internal/api        HTTP API and recent-results ring
 internal/alert      alert rules
