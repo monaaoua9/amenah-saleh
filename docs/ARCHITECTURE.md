@@ -117,6 +117,12 @@ Everything below sits outside the exactly-once core and is wired in
   relative error. It merges, which is what session bridging needs, and it is
   gob-encoded inside the window snapshot, so it is checkpointed and rescaled
   like the other aggregates. Off by default; the per-event cost is a `log`.
+- **Timers** (`internal/window/timers.go`): `Advance` pops due windows off a min-heap
+  of end times (and, for sessions, one entry per key) instead of scanning all
+  open state. With 200k open windows a no-op `Advance` went from ~12 ms to
+  ~20 ns. The heaps are derived state, rebuilt after every restore, so snapshots
+  are unchanged. `timers_test.go` runs the heap against the old full scan on
+  random out-of-order input.
 - **Distinct count** (`internal/hll`): 1 KiB of registers per open window, merged
   by register max, so sessions and snapshots treat it like the quantile sketch.
   It counts distinct *values* (window state is already per key). Off by default.
@@ -139,8 +145,6 @@ Everything below sits outside the exactly-once core and is wired in
   epoch, downstream dedups on (key, window start).
 - After a rescale the watermark restarts at the slowest old worker's, so a very
   late event can be accepted that an unscaled run would have dropped.
-- `Advance` scans all open windows once per batch; fine up to ~100k open
-  windows, after that use a timer heap.
 - Cluster recovery is a full rollback; a surviving worker is restored too.
 - Exactly-once needs a producer that follows the protocol: contiguous `Seq`, and
   replay of everything above the ack's `committed_seq`. `ingest.Producer` does
