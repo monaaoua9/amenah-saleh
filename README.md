@@ -32,7 +32,7 @@ separate worker processes. Both modes run the same worker code.
 | **Aggregates** | Count, sum, min, max, mean and stddev per window; optional p50/p95/p99 from a mergeable relative-error sketch (`-quantiles`) and distinct values (`-distinct`). |
 | **Outputs** | Rolling JSONL file, batched webhook with retry, late-event side output, alert rules with cooldown. |
 | **Ingest control** | Per-producer rate limit, event filter expressions, bearer-token auth and TLS. |
-| **Observability** | Prometheus text endpoint, `pprof`, a lock-free latency histogram, and a small HTTP API (recent results, top keys, stats, health). |
+| **Observability** | Prometheus text endpoint (engine, ingest filter and rate limiter, webhook, checkpoint size), `pprof`, a lock-free latency histogram, and a small HTTP API (recent results, top keys, stats, health). |
 
 How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -117,6 +117,8 @@ go run ./cmd/replay -speed 10 events.csv     # key,value,time_ms; or .jsonl
 curl 'localhost:8080/top?by=p99&n=5'
 ```
 
+Query it without curl: `go run ./cmd/streamctl -addr localhost:8080 top -by p99 -n 5`.
+
 `-speed 1` replays at the pace of the event timestamps, `0` (default) goes as
 fast as the engine accepts. With `-token` or `-tls-cert` set on the server, pass
 `-token` and `-tls`/`-ca` to `replay` and `loadgen`.
@@ -177,6 +179,7 @@ the benchmark's own key formatting; the commit that fixed it has the details.
 cmd/engine          server: standalone | master | worker
 cmd/loadgen         gRPC load generator (uses ingest.Producer)
 cmd/replay          feed a CSV or JSONL file through a producer
+cmd/streamctl       query the HTTP API from a terminal (stats, top, results, ready)
 internal/engine     lanes, workers, aligned barriers, sink, credits, remote workers
 internal/window     tumbling / sliding / session operator, watermark, snapshots
 internal/checkpoint snapshot store and ack coordinator
