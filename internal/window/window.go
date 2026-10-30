@@ -1,9 +1,7 @@
 package window
 
 import (
-	"bytes"
 	"container/heap"
-	"encoding/gob"
 	"errors"
 	"sync/atomic"
 
@@ -249,11 +247,7 @@ func (o *Operator) Snapshot() ([]byte, error) {
 			s.Sess = append(s.Sess, sessEntry{k, *x})
 		}
 	}
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(s); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return encodeSnap(&s), nil
 }
 
 func (o *Operator) Restore(b []byte) error {
@@ -273,8 +267,8 @@ func (o *Operator) RestoreMerge(blobs [][]byte, keep func(key string) bool) erro
 
 	var wm Watermark
 	for _, b := range blobs {
-		var s snap
-		if err := gob.NewDecoder(bytes.NewReader(b)).Decode(&s); err != nil {
+		s, err := decodeSnap(b)
+		if err != nil {
 			return err
 		}
 		for _, e := range s.Entries {
