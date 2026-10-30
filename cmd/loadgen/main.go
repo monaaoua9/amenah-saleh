@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/ingest"
-	"github.com/monaaoua9/amenah-saleh/internal/metrics"
-	"github.com/monaaoua9/amenah-saleh/internal/security"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/ingest"
+	"github.com/monaaoua9/streamdb/internal/metrics"
+	"github.com/monaaoua9/streamdb/internal/security"
 )
 
 func main() {

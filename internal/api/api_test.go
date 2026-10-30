@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/monaaoua9/amenah-saleh/internal/engine"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/engine"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 type noEngine struct{}

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package dspe.v1;
 
-option go_package = "github.com/monaaoua9/amenah-saleh/internal/ingest/pb";
+option go_package = "github.com/monaaoua9/streamdb/internal/ingest/pb";
 
 message Event {
   string key = 1;

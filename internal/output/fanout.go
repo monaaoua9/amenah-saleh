@@ -1,6 +1,6 @@
 package output
 
-import "github.com/monaaoua9/amenah-saleh/internal/event"
+import "github.com/monaaoua9/streamdb/internal/event"
 
 type Sink interface{ Write(event.Result) }
 

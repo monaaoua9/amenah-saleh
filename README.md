@@ -1,7 +1,7 @@
 | `-distinct` | add an approximate distinct-value count (HyperLogLog, ~3%) to every window result |
 # AMENAH SALEH — Distributed Stream Processing Engine
 
-[![ci](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/amenah-saleh/actions/workflows/ci.yml)
+[![ci](https://github.com/monaaoua9/streamdb/actions/workflows/ci.yml/badge.svg)](https://github.com/monaaoua9/streamdb/actions/workflows/ci.yml)
 ![go](https://img.shields.io/badge/go-1.27+-00ADD8)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
@@ -34,7 +34,7 @@ separate worker processes. Both modes run the same worker code.
 | **Ingest control** | Per-producer rate limit, event filter expressions, bearer-token auth and TLS. |
 | **Observability** | Prometheus text endpoint (engine, ingest filter and rate limiter, webhook, checkpoint size), `pprof`, a lock-free latency histogram, and a small HTTP API (recent results, top keys, stats, health). |
 
-How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+How and why each of these works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The decisions and trade-offs in short: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Quick start
 
@@ -150,11 +150,11 @@ these as ranges.
 | | |
 |---|---|
 | In-process pipeline, 4 workers (`make bench`) | ~4-5M events/s, ~150 B/event, batch P99 ~10-17 ms |
-| Window operator `Add` | ~130-150 ns/event, 0 allocs |
-| gRPC, 4 clients, 500 events/batch (`make stress`) | ~0.9M events/s, ack P99 ~4 ms |
+| Window operator `Add` | ~80 ns/event, 0 allocs |
+| gRPC, 4 clients, 500 events/batch (`make stress`) | ~1.3M events/s, ack P99 ~3 ms |
 | Cluster, master + 3 worker processes, same machine | ~0.8M events/s |
 
-The latency histogram is log-bucketed, so quantiles are accurate to ~25%.
+The latency histogram is log-bucketed, so quantiles are accurate to ~25%. Three-run medians and ranges are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 The in-process benchmark number was originally ~1.4M events/s; most of that was
 the benchmark's own key formatting; the commit that fixed it has the details.
 

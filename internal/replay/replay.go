@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 // CSV rows are key,value,time(ms). A first row that doesn't parse as numbers is

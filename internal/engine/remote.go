@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	cpb "github.com/monaaoua9/amenah-saleh/internal/cluster/pb"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	ipb "github.com/monaaoua9/amenah-saleh/internal/ingest/pb"
+	cpb "github.com/monaaoua9/streamdb/internal/cluster/pb"
+	"github.com/monaaoua9/streamdb/internal/event"
+	ipb "github.com/monaaoua9/streamdb/internal/ingest/pb"
 )
 
 // snapshots of a big window state go over the same stream

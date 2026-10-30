@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/monaaoua9/amenah-saleh/internal/engine"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/ingest/pb"
-	"github.com/monaaoua9/amenah-saleh/internal/metrics"
+	"github.com/monaaoua9/streamdb/internal/engine"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/ingest/pb"
+	"github.com/monaaoua9/streamdb/internal/metrics"
 )
 
 type Submitter interface {

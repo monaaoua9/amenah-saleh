@@ -11,15 +11,15 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/monaaoua9/amenah-saleh/internal/alert"
-	"github.com/monaaoua9/amenah-saleh/internal/api"
-	"github.com/monaaoua9/amenah-saleh/internal/engine"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/filter"
-	"github.com/monaaoua9/amenah-saleh/internal/ingest"
-	"github.com/monaaoua9/amenah-saleh/internal/output"
-	"github.com/monaaoua9/amenah-saleh/internal/security"
-	"github.com/monaaoua9/amenah-saleh/internal/window"
+	"github.com/monaaoua9/streamdb/internal/alert"
+	"github.com/monaaoua9/streamdb/internal/api"
+	"github.com/monaaoua9/streamdb/internal/engine"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/filter"
+	"github.com/monaaoua9/streamdb/internal/ingest"
+	"github.com/monaaoua9/streamdb/internal/output"
+	"github.com/monaaoua9/streamdb/internal/security"
+	"github.com/monaaoua9/streamdb/internal/window"
 )
 
 type holder struct{ e *engine.Engine }

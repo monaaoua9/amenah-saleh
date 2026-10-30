@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/window"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/window"
 )
 
 type workerMsg struct {

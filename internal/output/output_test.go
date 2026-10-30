@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 func readLines(t *testing.T, p string) []event.Result {

@@ -7,7 +7,7 @@
 package pb
 
 import (
-	pb "github.com/monaaoua9/amenah-saleh/internal/ingest/pb"
+	pb "github.com/monaaoua9/streamdb/internal/ingest/pb"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -1024,7 +1024,7 @@ const file_proto_cluster_proto_rawDesc = "" +
 	"\x04done\x18\x04 \x01(\v2\r.dspe.v1.DoneH\x00R\x04doneB\x05\n" +
 	"\x03msg2<\n" +
 	"\aCluster\x121\n" +
-	"\x03Run\x12\x13.dspe.v1.FromWorker\x1a\x11.dspe.v1.ToWorker(\x010\x01B7Z5github.com/monaaoua9/amenah-saleh/internal/cluster/pbb\x06proto3"
+	"\x03Run\x12\x13.dspe.v1.FromWorker\x1a\x11.dspe.v1.ToWorker(\x010\x01B3Z1github.com/monaaoua9/streamdb/internal/cluster/pbb\x06proto3"
 
 var (
 	file_proto_cluster_proto_rawDescOnce sync.Once

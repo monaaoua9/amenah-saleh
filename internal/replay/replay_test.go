@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 func collect(t *testing.T, src, format string) ([]event.Event, error) {

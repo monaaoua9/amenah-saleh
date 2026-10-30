@@ -6,7 +6,7 @@ import (
 	"encoding/gob"
 	"sync"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 type sinkMsg struct {

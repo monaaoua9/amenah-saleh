@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/monaaoua9/amenah-saleh/internal/ctl"
+	"github.com/monaaoua9/streamdb/internal/ctl"
 )
 
 const usage = `usage: streamctl [-addr host:port] <command>

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/engine"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/engine"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 // Engine is looked up per request because the master swaps it out after a worker loss.

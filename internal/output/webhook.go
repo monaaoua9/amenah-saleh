@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/metrics"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/metrics"
 )
 
 // Batches results and POSTs them as a JSON array. 5xx and network errors are

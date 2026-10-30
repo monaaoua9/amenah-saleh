@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 // Rule text: "<metric> <op> <number> [key=<substring>]"

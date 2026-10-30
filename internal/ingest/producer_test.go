@@ -13,9 +13,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/monaaoua9/amenah-saleh/internal/engine"
-	"github.com/monaaoua9/amenah-saleh/internal/event"
-	"github.com/monaaoua9/amenah-saleh/internal/window"
+	"github.com/monaaoua9/streamdb/internal/engine"
+	"github.com/monaaoua9/streamdb/internal/event"
+	"github.com/monaaoua9/streamdb/internal/window"
 )
 
 type collector struct {

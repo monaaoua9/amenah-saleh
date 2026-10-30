@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/monaaoua9/amenah-saleh/internal/event"
+	"github.com/monaaoua9/streamdb/internal/event"
 )
 
 // JSONL writer that rolls to out.1, out.2, ... once the current file passes maxBytes.
