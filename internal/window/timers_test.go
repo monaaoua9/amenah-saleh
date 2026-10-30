@@ -149,7 +149,3 @@ func benchAdvance(b *testing.B, adv func(*Operator, func(event.Result))) {
 func BenchmarkAdvanceHeap200kOpen(b *testing.B) {
 	benchAdvance(b, func(o *Operator, e func(event.Result)) { o.Advance(e) })
 }
-
-func BenchmarkAdvanceFullScan200kOpen(b *testing.B) {
-	benchAdvance(b, func(o *Operator, e func(event.Result)) { o.naiveAdvance(e) })
-}
