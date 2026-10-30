@@ -108,3 +108,13 @@ func BenchmarkEncodeResults(b *testing.B) {
 		}
 	})
 }
+
+func FuzzDecodeResults(f *testing.F) {
+	good, _ := encodeResults([][]event.Result{sample(rand.New(rand.NewSource(5)), 5)})
+	f.Add(good)
+	f.Add([]byte("DSR1"))
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, b []byte) {
+		decodeResults(b)
+	})
+}

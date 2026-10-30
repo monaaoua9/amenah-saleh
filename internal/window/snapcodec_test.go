@@ -127,3 +127,14 @@ func BenchmarkSnapshot(b *testing.B) {
 		}
 	})
 }
+
+func FuzzRestore(f *testing.F) {
+	cfg := Config{Size: 1000, Quantiles: true, Distinct: true}
+	good, _ := busyOperator(cfg).Snapshot()
+	f.Add(good)
+	f.Add(snapMagic)
+	f.Add([]byte{})
+	f.Fuzz(func(t *testing.T, b []byte) {
+		New(cfg).Restore(b)
+	})
+}

@@ -50,3 +50,18 @@ func TestParseErrors(t *testing.T) {
 		}
 	}
 }
+
+func FuzzParse(f *testing.F) {
+	for _, s := range []string{`value > 10`, `key ~ "a" && (value < 1 || !(time == 3))`, `key == 'x'`, ``, `((((`, `value > 1e999`, `"`, `!!!!value>1`} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, src string) {
+		fn, err := Parse(src)
+		if err != nil {
+			return
+		}
+		// anything that parses has to be safe to run
+		fn(event.Event{Key: "k", Value: 1, Time: 2})
+		fn(event.Event{})
+	})
+}

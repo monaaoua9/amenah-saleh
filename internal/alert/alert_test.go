@@ -109,3 +109,16 @@ func TestDistinctRule(t *testing.T) {
 		t.Fatalf("%+v", *got)
 	}
 }
+
+func FuzzParseRule(f *testing.F) {
+	for _, s := range []string{"avg > 80", "count <= 3 key=cpu-", "p99 > 1e308", "max >= -0", "a b c d"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		r, err := ParseRule(s)
+		if err != nil {
+			return
+		}
+		r.match(event.Result{Key: "cpu-1", Count: 3, Sum: 9, Max: 5})
+	})
+}

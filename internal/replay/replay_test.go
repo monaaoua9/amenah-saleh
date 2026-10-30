@@ -90,3 +90,12 @@ func TestPacer(t *testing.T) {
 		t.Fatal("speed 0 must not sleep")
 	}
 }
+
+func FuzzRead(f *testing.F) {
+	f.Add("key,value,time\na,1,2\n", "csv")
+	f.Add(`{"key":"a","value":1,"time":2}`+"\n", "jsonl")
+	f.Add("a,\"unterminated\n", "csv")
+	f.Fuzz(func(t *testing.T, src, format string) {
+		Read(strings.NewReader(src), format, func(event.Event) error { return nil })
+	})
+}
