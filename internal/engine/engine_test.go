@@ -499,3 +499,36 @@ func TestRestoreAcrossCompressionChange(t *testing.T) {
 		}
 	}
 }
+
+func TestOnLateReceivesDroppedEvents(t *testing.T) {
+	var mu sync.Mutex
+	var late []event.Event
+	c := newCollector()
+	cfg := testCfg(t.TempDir(), c)
+	cfg.Lanes, cfg.Workers = 1, 1
+	cfg.OnLate = func(e event.Event) {
+		mu.Lock()
+		late = append(late, e)
+		mu.Unlock()
+	}
+	e := New(cfg)
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	evs := []event.Event{
+		{Key: "a", Value: 1, Time: 100000, Seq: 1},
+		{Key: "a", Value: 2, Time: 5, Seq: 2}, // lateness is 0, watermark is far ahead
+	}
+	feed(t, e, evs)
+	finish(t, e)
+	e.Stop()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(late) != 1 || late[0].Value != 2 {
+		t.Fatalf("late=%+v", late)
+	}
+	if e.Stats().Late != 1 {
+		t.Fatalf("stat %d", e.Stats().Late)
+	}
+}

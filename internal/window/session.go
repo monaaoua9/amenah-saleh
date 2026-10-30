@@ -10,7 +10,7 @@ type session struct {
 func (o *Operator) addSession(e event.Event) {
 	gap := o.cfg.Gap
 	if e.Time+gap <= o.wm.Current() {
-		o.late.Add(1)
+		o.drop(e)
 		return
 	}
 

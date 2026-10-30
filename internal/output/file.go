@@ -49,8 +49,12 @@ func (f *File) open() error {
 	return nil
 }
 
-func (f *File) Write(r event.Result) {
-	b, _ := json.Marshal(r)
+func (f *File) Write(r event.Result) { f.line(r) }
+
+func (f *File) WriteEvent(e event.Event) { f.line(e) }
+
+func (f *File) line(v any) {
+	b, _ := json.Marshal(v)
 	b = append(b, '\n')
 
 	f.mu.Lock()

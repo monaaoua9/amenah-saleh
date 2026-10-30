@@ -88,6 +88,7 @@ func main() {
 	alertCool := flag.Int64("alertcooldown", 60000, "ms of event time before the same rule fires again for a key")
 	alertHook := flag.String("alerthook", "", "POST alerts as JSON to this url (they are always logged)")
 	ckGzip := flag.Bool("ckgzip", false, "gzip checkpoint snapshots")
+	lateFile := flag.String("latefile", "", "append events dropped as too late to this JSONL file (standalone only)")
 	shed := flag.Bool("shed", false, "reject instead of stalling when overloaded")
 	metricsAddr := flag.String("metrics", "", "prometheus /metrics listen addr, off when empty")
 	pprofAddr := flag.String("pprof", "", "pprof listen addr, off when empty")
@@ -148,6 +149,18 @@ func main() {
 		defer f.Close()
 		sinks = append(sinks, f)
 	}
+	var onLate func(event.Event)
+	if *lateFile != "" {
+		lf, err := output.NewFile(*lateFile, *outMax)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer lf.Close()
+		onLate = lf.WriteEvent
+		if *role == "master" {
+			log.Print("-latefile has no effect in master mode: remote workers do not report late events")
+		}
+	}
 	if *webhook != "" {
 		wh := output.NewWebhook(*webhook, 500, time.Second)
 		defer wh.Close()
@@ -158,6 +171,7 @@ func main() {
 		Window:        window.Config{Size: *size, Slide: *slide, Gap: *gap, Lateness: *lateness, Disorder: *disorder, MaxJump: *maxJump},
 		CheckpointDir: *dir, CheckpointEvery: *every, CheckpointCompress: *ckGzip, MaxPending: *maxPending,
 		OnResult: output.Fanout(sinks...),
+		OnLate:   onLate,
 	}
 
 	cur := &current{}

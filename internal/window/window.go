@@ -59,6 +59,17 @@ type Operator struct {
 	sess map[string][]*session
 	wm   Watermark
 	late atomic.Uint64
+
+	// sees every event counted as late, including implausible timestamps.
+	// Runs on the worker goroutine; set before the first Add.
+	OnLate func(event.Event)
+}
+
+func (o *Operator) drop(e event.Event) {
+	o.late.Add(1)
+	if o.OnLate != nil {
+		o.OnLate(e)
+	}
 }
 
 func New(cfg Config) *Operator {
@@ -72,7 +83,7 @@ func New(cfg Config) *Operator {
 
 func (o *Operator) Add(e event.Event, emit func(event.Result)) {
 	if o.implausible(e.Time) {
-		o.late.Add(1)
+		o.drop(e)
 		return
 	}
 	if o.cfg.Gap > 0 {
@@ -98,7 +109,7 @@ func (o *Operator) Add(e event.Event, emit func(event.Result)) {
 		taken = true
 	}
 	if !taken {
-		o.late.Add(1)
+		o.drop(e)
 	}
 	o.wm.Observe(e.Time)
 }

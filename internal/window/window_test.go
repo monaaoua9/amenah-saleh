@@ -202,3 +202,21 @@ func TestSessionMergeKeepsSumSq(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestOnLateSeesEveryDrop(t *testing.T) {
+	op := New(Config{Size: 1000})
+	var late []event.Event
+	op.OnLate = func(e event.Event) { late = append(late, e) }
+
+	op.Add(event.Event{Key: "a", Value: 1, Time: 10000}, nil)
+	op.Add(event.Event{Key: "a", Value: 2, Time: 50}, nil)      // far behind the watermark
+	op.Add(event.Event{Key: "a", Value: 3, Time: 1 << 61}, nil) // implausible
+	op.Add(event.Event{Key: "a", Value: 4, Time: 10001}, nil)   // fine
+
+	if len(late) != 2 || late[0].Value != 2 || late[1].Value != 3 {
+		t.Fatalf("%+v", late)
+	}
+	if op.Late() != 2 {
+		t.Fatalf("counter %d", op.Late())
+	}
+}

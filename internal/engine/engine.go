@@ -42,6 +42,11 @@ type Config struct {
 	MaxPending int
 	OnResult   func(event.Result)
 
+	// Events dropped as too late, in-process workers only. Called from worker
+	// goroutines, so it has to be safe for concurrent use. After a crash the
+	// replayed range can report the same event again: at-least-once.
+	OnLate func(event.Event)
+
 	// Connected worker nodes. When set, Workers is taken from its length and the
 	// windows run on those nodes instead of in-process. Needs the Hash partitioner.
 	Remote []WorkerConn
@@ -159,6 +164,7 @@ func (e *Engine) start(ctx context.Context) error {
 			continue
 		}
 		w := newWorker(i, cfg.Lanes, cfg.Window, localEnv{e})
+		w.op.OnLate = cfg.OnLate
 		w.in = in
 		e.workers = append(e.workers, w)
 	}
