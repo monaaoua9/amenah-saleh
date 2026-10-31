@@ -151,7 +151,7 @@ these as ranges.
 |---|---|
 | In-process pipeline, 4 workers (`make bench`) | ~7M events/s, ~150 B/event, batch P99 ~9-17 ms |
 | Window operator `Add` | ~44 ns/event, 0 allocs |
-| gRPC, 4 clients, 500 events/batch (`make stress`) | ~1.4-1.8M events/s, ack P99 ~2 ms |
+| gRPC, 4 clients, 500 events/batch (`make stress`) | ~1.4-2.1M events/s, ack P99 ~2 ms |
 | Cluster, master + 3 worker processes, same machine | ~0.8M events/s |
 
 The pipeline, `Add` and gRPC figures were re-measured on 2026-10-31 with one terminal open; the cluster figure is older. Medians and ranges are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).

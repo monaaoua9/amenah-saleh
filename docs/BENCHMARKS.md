@@ -43,6 +43,16 @@ Engine and load generator on the same laptop. Three 10 s runs:
 
 Median 1,480,669 events/s (1.42M – 1.76M).
 
+After the ingest decoder change (batches decode straight into events, keys interned per stream), an interleaved comparison of the previous and new engine binaries, three 6 s rounds on the same laptop:
+
+| round | before | after |
+|---:|---:|---:|
+| 1 | 1,547,626 | 1,970,064 |
+| 2 | 1,738,143 | 2,172,162 |
+| 3 | 1,716,930 | 2,142,881 |
+
+About 25% more events/s each round, and ack p50 went from 0.66-1.05 ms to 0.52 ms. The table above predates this change. Absolute numbers in this second session ran higher than in the first, so compare within a table, not across.
+
 ## Reading these numbers
 
 - Latency quantiles come from a log-bucketed histogram, so they're accurate to about 25%; that's why p50 reads exactly 1.048576 ms in every run (a bucket edge). Don't read differences between runs under that as real.
