@@ -172,7 +172,7 @@ the benchmark's own key formatting; the commit that fixed it has the details.
   late event may be accepted that an unscaled run would have dropped.
 - Rescaling and cluster mode need the `Hash` partitioner.
 - Session windows have no allowed lateness.
-- Event times beyond ±2^60 are always dropped; `-maxjump` additionally drops events
+- Event times beyond Â±2^60 are always dropped; `-maxjump` additionally drops events
   too far ahead of the newest one so a single bad timestamp cannot freeze a window.
 
 ## Layout
