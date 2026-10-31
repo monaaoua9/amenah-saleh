@@ -24,7 +24,6 @@ type Submitter interface {
 }
 
 type Server struct {
-	pb.UnimplementedIngestServer
 	sub Submitter
 	// shed = reject with RESOURCE_EXHAUSTED when full instead of stalling the stream
 	shed      bool
@@ -60,23 +59,20 @@ func (s *Server) WriteMetrics(w io.Writer) {
 	metrics.Write(w, "dspe_ingest_throttled_total", "Batches delayed or rejected by the rate limiter.", "counter", float64(s.Throttled()))
 }
 
-func (s *Server) Register(g *grpc.Server) { pb.RegisterIngestServer(g, s) }
+func (s *Server) Register(g *grpc.Server) { g.RegisterService(&ingestDesc, s) }
 
-func (s *Server) Stream(st grpc.BidiStreamingServer[pb.Batch, pb.Ack]) error {
+func (s *Server) serve(st grpc.ServerStream) error {
 	ctx := st.Context()
+	var b fastBatch
 	for {
-		b, err := st.Recv()
+		err := st.RecvMsg(&b)
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-
-		evs := make([]event.Event, len(b.Events))
-		for i, e := range b.Events {
-			evs[i] = event.Event{Key: e.Key, Value: e.Value, Time: e.Time, Seq: e.Seq}
-		}
+		evs := b.Events
 
 		var last uint64
 		if n := len(evs); n > 0 {
@@ -125,7 +121,7 @@ func (s *Server) Stream(st grpc.BidiStreamingServer[pb.Batch, pb.Ack]) error {
 			return status.Error(codes.Unavailable, err.Error())
 		}
 
-		if err := st.Send(&pb.Ack{Producer: b.Producer, LastSeq: last, CommittedSeq: s.sub.Committed(b.Producer)}); err != nil {
+		if err := st.SendMsg(&pb.Ack{Producer: b.Producer, LastSeq: last, CommittedSeq: s.sub.Committed(b.Producer)}); err != nil {
 			return err
 		}
 	}
