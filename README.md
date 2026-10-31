@@ -149,12 +149,12 @@ these as ranges.
 
 | | |
 |---|---|
-| In-process pipeline, 4 workers (`make bench`) | ~4-5M events/s, ~150 B/event, batch P99 ~10-17 ms |
-| Window operator `Add` | ~80 ns/event, 0 allocs |
-| gRPC, 4 clients, 500 events/batch (`make stress`) | ~1.3M events/s, ack P99 ~3 ms |
+| In-process pipeline, 4 workers (`make bench`) | ~7M events/s, ~150 B/event, batch P99 ~9-17 ms |
+| Window operator `Add` | ~44 ns/event, 0 allocs |
+| gRPC, 4 clients, 500 events/batch (`make stress`) | ~1.4-1.8M events/s, ack P99 ~2 ms |
 | Cluster, master + 3 worker processes, same machine | ~0.8M events/s |
 
-The pipeline and `Add` figures date from before the quantile, distinct and timer-heap work; the current code measured about 10-25% lower on the pipeline benchmark in an A/B run (see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)).
+The pipeline, `Add` and gRPC figures were re-measured on 2026-10-31 with one terminal open; the cluster figure is older. Medians and ranges are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 The latency histogram is log-bucketed, so quantiles are accurate to ~25%. Three-run medians and ranges are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 The in-process benchmark number was originally ~1.4M events/s; most of that was
